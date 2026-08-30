@@ -251,7 +251,12 @@ Format wie in Abschnitt 3.1 angenommen. Zwischenzeitlich **gegen die echte Hardw
   (`0x600+NodeID`/`0x580+NodeID`), `canopen_test.py --direct` (Standard) funktioniert ohne Handshake.
 - Die aus `staircaseblog/uvr16x2logging` übernommenen Objektindizes (`0x8272` etc., UVR16x2-Eingang)
   existieren auf diesem Gerät **nicht** (`Object does not exist`, 0x06020000) — vermutlich andere
-  Firmware-/Geräte-Variante.
+  Firmware-/Geräte-Variante. **Update:** per `candump` (während CMI eine "CAN-Analogausgang"-Seite
+  lud) den *richtigen* Objektindex für dieses Gerät gefunden: **`0x2050`**, Subindex = Ausgangsnummer
+  minus 1. Die Dekodierformel aus dem Referenzprojekt (`decode_uvr16x2_value()`) war die ganze Zeit
+  korrekt — nur die Objektbasis war falsch. Bestätigt gegen 3 Werte, die exakt mit dem
+  Datensatz-Decode (`decode_datensatz()`, Objekt `0x4FF4:04`) übereinstimmen. Anders als
+  `0x4FF4` läuft dieser Zugriff über eine **segmentierte** (nicht Block-)SDO-Antwort.
 - Stattdessen liest ein bereits vorhandener zweiter Master (vermutlich CMI) laufend **Objekt
   `0x4FF4:04`** per SDO-Block-Transfer — ein **98-Byte-Datensatz**. Mit `scripts/sdo_sniffer.py`
   passiv mitgeschnitten und gegen einen am UVR-Display abgelesenen Wert verifiziert:

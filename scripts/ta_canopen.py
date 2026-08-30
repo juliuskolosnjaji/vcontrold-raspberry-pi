@@ -85,10 +85,20 @@ def decode_datensatz(payload: bytes) -> dict:
     }
 
 
+# BESTÄTIGT gegen echte Hardware (candump während CMI eine "CAN-Analogausgang"-Detailseite
+# lud): Objekt 0x2050, Subindex = Ausgangsnummer - 1 (0-basiert), liefert genau einen
+# CAN-Analogausgang als SEGMENTIERTE (nicht expedited, nicht Block-) SDO-Antwort, 6 Byte,
+# dekodiert mit derselben Formel wie decode_uvr16x2_value() -- Subindex 0x00 = 28.6 =
+# "Ausgang 1" (T.Heizkreis VL), Subindex 0x01 = 26.5 = Ausgang 2, Subindex 0x02 = 28.5 =
+# Ausgang 3, jeweils exakt deckungsgleich mit den per decode_datensatz() gelesenen Slots.
+# Die Objektbasis 0x8272 aus uvr16x2logging war für dieses Gerät falsch, die dortige
+# Dekodierformel (decode_uvr16x2_value) aber korrekt.
+UVR16X2_OBJ_AUSGANG_WERT = 0x2050  # Ausgangswert (bestätigt), Subindex 0..15 = Ausgang 1..16
+
 # Objektverzeichnis UVR16x2 (Quelle: uvr16x2logging, UNVERIFIZIERT für dieses Gerät,
 # siehe Modul-Docstring)
 UVR16X2_OBJ_AUSGAENGE = 0x8400          # Netzwerkausgänge, subindex 1-16
-UVR16X2_OBJ_EINGANG_WERT = 0x8272       # Eingangswert, subindex 1-16
+UVR16X2_OBJ_EINGANG_WERT = 0x8272       # Eingangswert, subindex 1-16 (UNVERIFIZIERT, falsch für dieses Gerät -- siehe UVR16X2_OBJ_AUSGANG_WERT)
 UVR16X2_OBJ_EINGANG_BEZEICHNUNG = 0x8207  # Eingangsbezeichnung (String), subindex 1-16
 UVR16X2_OBJ_UHRZEIT = 0x9367
 UVR16X2_OBJ_DATUM = 0x9370
