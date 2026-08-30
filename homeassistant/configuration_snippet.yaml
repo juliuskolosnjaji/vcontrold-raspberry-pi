@@ -8,15 +8,43 @@ mqtt:
       unit_of_measurement: "°C"
       device_class: temperature
 
+    - name: "Kesseltemperatur (Ist)"
+      state_topic: "heizung/kesseltemperatur_ist"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "Kesseltemperatur (Soll)"
+      state_topic: "heizung/kesseltemperatur_soll"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "Warmwassertemperatur"
+      state_topic: "heizung/warmwassertemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
     - name: "Vorlauftemperatur"
       state_topic: "heizung/vorlauftemperatur"
       unit_of_measurement: "°C"
       device_class: temperature
 
-    - name: "Kesseltemperatur"
-      state_topic: "heizung/kesseltemperatur"
+    - name: "Rücklauftemperatur"
+      state_topic: "heizung/ruecklauftemperatur"
       unit_of_measurement: "°C"
       device_class: temperature
+
+    - name: "Betriebsart"
+      state_topic: "heizung/betriebsart"
+
+    - name: "Brennerstarts"
+      state_topic: "heizung/brenner_starts"
+
+    - name: "Brennerstunden Stufe 1"
+      state_topic: "heizung/brennerstunden_stufe1"
+      unit_of_measurement: "h"
+
+    - name: "Gasverbrauch"
+      state_topic: "heizung/verbrauch"
 
     - name: "UVR Kollektortemperatur"
       state_topic: "uvr/kollektortemperatur"
@@ -31,6 +59,25 @@ mqtt:
       max: 28
       step: 0.5
       unit_of_measurement: "°C"
+
+    - name: "Solltemperatur Reduziert"
+      command_topic: "heizung/cmd/solltemperatur_reduziert"
+      state_topic: "heizung/solltemperatur_reduziert"
+      min: 5
+      max: 24
+      step: 0.5
+      unit_of_measurement: "°C"
+
+  select:
+    - name: "Betriebsart setzen"
+      command_topic: "heizung/cmd/betriebsart"
+      state_topic: "heizung/betriebsart"
+      options:
+        - "WW"
+        - "RED"
+        - "NORM"
+        - "H+WW"
+        - "ABSCHALT"
 
   switch:
     - name: "UVR Pumpe"

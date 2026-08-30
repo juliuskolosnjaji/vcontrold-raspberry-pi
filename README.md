@@ -61,12 +61,23 @@ sudo bash install_vcontrold.sh
 
 Das Skript:
 - installiert Build-Abhängigkeiten (`libxml2-dev`, `python3-docutils`, `cmake`, `build-essential`, `git`)
-- klont `https://github.com/openv/vcontrold`
-- baut mit `cmake` + `make` und installiert nach `/usr/local`
-- legt eine udev-Regel für den Optolink-USB-Adapter an, damit das Gerät stabil unter `/dev/optolink` erreichbar ist
-- kopiert eine `vcontrold.xml`-Vorlage nach `/etc/vcontrold.xml`
+- klont `https://github.com/openv/vcontrold` nach `/usr/local/src/vcontrold`
+- baut mit `cmake` + `make` und installiert (vcontrolds `CMakeLists.txt` setzt den Prefix fest auf `/usr`, also landet der Daemon unter `/usr/sbin/vcontrold`, `vclient` unter `/usr/bin/vclient`)
+- legt eine udev-Regel für den Optolink-USB-Adapter an
+- legt `/etc/vcontrold/vcontrold.xml` + `/etc/vcontrold/vito.xml` an (die zwei Dateien, die vcontrold laut `man vcontrold` erwartet — `vcontrold.xml` enthält Serial-Device/Port/Device-ID, `vito.xml` die Kommando-Definitionen und wird per XInclude eingebunden)
 
-**Wichtig – Protokoll klären:** vcontrold unterscheidet zwei Protokollfamilien (`xml/300` = P300, `xml/kw` = älteres KW-Protokoll). Die Vitogas 100 läuft je nach Regelung (Vitotronic 100 GC1, oder ältere Vitotronic 100/200 Typen) auf **KW** oder **P300**. Das musst du für dein Gerät verifizieren (siehe OpenV-Wiki: https://github.com/openv/openv/wiki/ und Typenschild/Handbuch deiner Vitotronic). In `/etc/vcontrold.xml` unter `<device>` das passende Protokoll-XML referenzieren, z.B. `deviceP300.xml` oder `deviceKW.xml` – Namen im Zweifel per `ls /usr/local/etc/vcontrold/xml/` prüfen.
+**Protokoll bereits bekannt:** Für dieses Setup wurde die Regelung bereits identifiziert — **Vitotronic V200KW1 (Device-ID `2094`), KW-Protokoll**. Die passende, funktionsfähige Config liegt unter [`config/device-vitogas100-v200kw1/`](config/device-vitogas100-v200kw1/) (inkl. aller Getter/Setter für Temperaturen, Betriebsart, Brennerstunden etc.) und wird von `install_vcontrold.sh` automatisch nach `/etc/vcontrold/` kopiert — `<tty>` steht auf `/dev/ttyUSB0`.
+
+Falls du das Setup auf einer **anderen** Vitotronic-Regelung nachbaust, unterscheidet vcontrold zwei Protokollfamilien (`xml/300` = P300, `xml/kw` = älteres KW2-Protokoll). Welches Protokoll dein Gerät spricht, siehe OpenV-Wiki: https://github.com/openv/openv/wiki/. Umschalten:
+
+```bash
+sudo cp /usr/local/src/vcontrold/xml/300/vcontrold.xml /etc/vcontrold/vcontrold.xml
+sudo cp /usr/local/src/vcontrold/xml/300/vito.xml /etc/vcontrold/vito.xml
+sudo sed -i 's#<tty>.*</tty>#<tty>/dev/optolink</tty>#' /etc/vcontrold/vcontrold.xml
+sudo systemctl restart vcontrold
+```
+
+Und in `/etc/vcontrold/vcontrold.xml` unter `<device ID="..."/>` die zu deinem Vitotronic-Typ passende Geräte-ID eintragen — die verfügbaren IDs stehen am Anfang der jeweiligen `vito.xml` (`<devices><device ID="..." name="..." protocol=".../></devices>`).
 
 `install.sh` installiert und startet `vcontrold.service` bereits automatisch. Status prüfen:
 
@@ -167,6 +178,7 @@ Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 
 - **Konsole**: Getter/Setter aus deiner Geräte-XML per Dropdown auswählen oder frei eingeben, direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
 - **Config-Import**: Geräte-XML hochladen, Backup der bisherigen `/etc/vcontrold.xml` wird automatisch angelegt, danach `systemctl restart vcontrold`.
+- **Config-Editor**: `vcontrold.xml` und `vito.xml` direkt als Text im Browser bearbeiten (z.B. um schnell einen neuen Getter/Setter hinzuzufügen), statt eine Datei hochzuladen. Validiert XML vor dem Speichern, legt Backups an, startet `vcontrold` neu.
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Bridge-Dienste (`can-to-mqtt`, `mqtt-to-can`, `mqtt-command-listener`, `vcontrold-to-mqtt.timer`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
 - **Diagnose**: Status aller Dienste (vcontrold, can-to-mqtt, mqtt-to-can, mqtt-command-listener, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — hilft dabei, das UVR-Protokoll für `FRAME_MAP`/`COMMAND_MAP` empirisch zu ermitteln.
@@ -184,7 +196,7 @@ Erreichbar unter `http://<pi-ip>:5000` (läuft **als root**, da Config-Import na
 
 ## Offene Punkte, die nur du klären kannst
 
-1. **Protokoll deiner Vitotronic** (KW vs. P300) und die exakten Datenpunkt-Namen — steht in der zu deinem Regler passenden XML-Datei im vcontrold-Repo.
+1. ~~Protokoll der Vitotronic~~ — **erledigt:** V200KW1, Device-ID `2094`, KW-Protokoll (siehe `config/device-vitogas100-v200kw1/`).
 2. **CAN-Bitrate und Frame-Format der UVR** — abhängig vom TA-Gerätetyp (z.B. UVR1611, UVR16x2) und dessen CAN-Konfiguration. Nötig für `FRAME_MAP` (Lesen) und `COMMAND_MAP` (Schreiben) in den CAN-Skripten.
 3. **PiCAN-Board-Variante** (PiCAN2 vs. PiCAN3, Oszillatorfrequenz) für den korrekten Device-Tree-Overlay-Parameter.
 4. **MQTT-Zugangsdaten** des Home-Assistant-Mosquitto-Brokers (Host/User/Passwort) in `config/mqtt.env`.

@@ -11,6 +11,19 @@ def service_status(name: str) -> dict:
     return {"name": name, "state": active}
 
 
+def restart_service(name: str, timeout: int = 15) -> dict:
+    """Startet einen systemd-Dienst neu. Gibt {"ok", "detail"} zurück."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "restart", name], capture_output=True, text=True, timeout=timeout
+        )
+        if result.returncode == 0:
+            return {"ok": True, "detail": ""}
+        return {"ok": False, "detail": result.stderr.strip() or f"exit code {result.returncode}"}
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        return {"ok": False, "detail": str(exc)}
+
+
 def service_log(name: str, lines: int = 50) -> str:
     try:
         result = subprocess.run(

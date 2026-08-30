@@ -4,8 +4,10 @@ Fragt eine Liste von vcontrold-Datenpunkten per vclient ab und published sie per
 
 Gedacht für den Aufruf per Cronjob (siehe README.md).
 
-TODO: DATAPOINTS an die tatsächlichen Getter-Namen deiner Geräte-XML anpassen
-(siehe /usr/local/etc/vcontrold/xml/... bzw. `vclient -c "list"`).
+Getter-Namen entsprechen /etc/vcontrold/vito.xml für Vitogas 100 mit
+Vitotronic V200KW1 (Device-ID 2094, KW-Protokoll). Bei anderem Regler die
+DATAPOINTS an die Getter-Namen deiner Geräte-XML anpassen (siehe
+`vclient -c "list"` oder die UI-Konsole/den Config-Editor).
 """
 import subprocess
 import sys
@@ -17,10 +19,21 @@ VCLIENT_PORT = "3002"
 
 # Mapping: vclient-Kommando -> MQTT-Subtopic
 DATAPOINTS = {
-    "getTempAussen": "aussentemperatur",
-    "getTempVorlauf": "vorlauftemperatur",
-    "getTempKessel": "kesseltemperatur",
-    "getBetriebsstunden": "betriebsstunden",
+    "getTempAist": "aussentemperatur",
+    "getTempKist": "kesseltemperatur_ist",
+    "getTempKsoll": "kesseltemperatur_soll",
+    "getTempWWist": "warmwassertemperatur",
+    "getTempVList": "vorlauftemperatur",
+    "getTempRList": "ruecklauftemperatur",
+    "getBetriebsart": "betriebsart",
+    "getBrennerStatus": "brenner_status",
+    "getBrennerStarts": "brenner_starts",
+    "getBrennerStunden1": "brennerstunden_stufe1",
+    "getBrennerStunden2": "brennerstunden_stufe2",
+    "getVerbrauch": "verbrauch",
+    "getErrorAktiv": "sammelstoerung_aktiv",
+    "getTempRaumNorSoll": "solltemperatur_normal",
+    "getTempRaumRedSoll": "solltemperatur_reduziert",
 }
 
 

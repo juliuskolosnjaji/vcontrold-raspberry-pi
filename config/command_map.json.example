@@ -1,5 +1,10 @@
 {
-  "solltemperatur_normal": "setSolltempNormal",
-  "solltemperatur_reduziert": "setSolltempReduziert",
-  "betriebsart": "setBetriebsart"
+  "solltemperatur_normal": "setTempRaumNorSoll",
+  "solltemperatur_reduziert": "setTempRaumRedSoll",
+  "solltemperatur_party": "setTempRaumPartySoll",
+  "betriebsart": "setBetriebsart",
+  "betriebsart_spar": "setBetriebSpar",
+  "betriebsart_party": "setBetriebParty",
+  "neigung_heizkennlinie": "setNeigung",
+  "niveau_heizkennlinie": "setNiveau"
 }

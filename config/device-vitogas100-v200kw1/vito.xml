@@ -1,0 +1,308 @@
+<?xml version="1.0"?>
+<vito>
+  <devices>
+    <device ID="2094" name="V200KW1" protocol="KW"/>
+  </devices>
+  <commands>
+  
+    <command name="getTempAist" protocmd="getaddr">
+      <addr>0800</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <error>05 05</error>
+      <description>Ermittle die Aussentemeratur in Grad C</description>  
+    </command>
+
+   <command name="getTempKist" protocmd="getaddr">
+      <addr>0802</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <error>05 05</error>
+      <description>Ermittle die Kesseltemperatur Ist in Grad C</description>
+    </command> 
+	
+	 <command name="getTempKsoll" protocmd="getaddr">
+      <addr>5502</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <error>05 05</error>
+      <description>Ermittle die Kesselsolltemperatur in Grad C</description>
+    </command> 
+	
+    <command name="getTempWWist" protocmd="getaddr">
+      <addr>0804</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <error>05 05</error>
+      <description>Ermittle die Warmwassertemperatur in Grad C</description>
+    </command>	
+	
+    <command name="getTempRList" protocmd="getaddr">
+      <addr>080A</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <error>05 05</error>
+      <description>Ermittle die Rüclauftemperatur in Grad C</description>  
+    </command> 
+	
+    <command name="getTempVList" protocmd="getaddr">
+      <addr>080C</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Vorlauftemperatur in Grad C</description>
+    </command>  
+
+    <command name="getTempATist" protocmd="getaddr">
+      <addr>5525</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Aussentemperatur Tiefpass in Grad C</description>
+    </command>
+	
+    <command name="getTempAGist" protocmd="getaddr">
+      <addr>5527</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Aussentemperatur gedämft in Grad C</description>
+    </command> 
+	
+    <command name="getTempSTist" protocmd="getaddr">
+      <addr>0812</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Speichertemperatur Tiefpass in Grad C</description>
+    </command>
+	
+    <command name="getTempST2ist" protocmd="getaddr">
+      <addr>0814</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Speichertemperatur Tiefpass 2 in Grad C</description>
+    </command> 
+	
+    <command name="getTempRLTist" protocmd="getaddr">
+      <addr>0818</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Rücklauftemperatur (17A) Tiefpass in Grad C</description>
+    </command> 
+	
+    <command name="getTempRLVLTist" protocmd="getaddr">
+      <addr>081A</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Rück-/Vorlauflauftemperatur (17A) Tiefpass in Grad C</description>
+    </command> 
+
+    <command name="getTempRaumTist" protocmd="getaddr">
+      <addr>0896</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Raumtemperatur A1M1 Tiefpass in Grad C</description>
+    </command>
+
+    <command name="getBrennerStatus" protocmd="getaddr">
+      <addr>551E</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle den Brennerstatus</description>
+    </command>
+	
+    <command name="getLeistung" protocmd="getaddr">
+      <addr>55E3</addr>
+      <len>1</len>
+      <unit>PR</unit>
+      <description>Ermittle die aktuelle Leistung (0..100%)</description>
+    </command> 
+	
+    <command name="getBrennerError" protocmd="getaddr">
+      <addr>0883</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle die Brennerstörung </description>
+    </command> 
+	
+    <command name="getState1" protocmd="getaddr">
+      <addr>0842</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle Zustand 1. Stufe </description>
+    </command> 
+	
+    <command name="getState2" protocmd="getaddr">
+      <addr>0849</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle Zustand 2. Stufe </description>
+    </command> 
+	
+    <command name="getVerbrauch" protocmd="getaddr">
+      <addr>7574</addr>
+      <len>4</len>
+      <unit>GV</unit>
+      <description>Ermittle Verbrauch </description>
+    </command> 
+	
+    <command name="getBrennerStarts" protocmd="getaddr">
+      <addr>088A</addr>
+      <len>4</len>
+      <unit>CO</unit>
+      <description>Ermittle die Brennerstarts</description>
+    </command>
+    
+    <command name="getBrennerStunden1" protocmd="getaddr">
+      <addr>08A7</addr>
+      <len>4</len>
+      <unit>CS</unit>
+      <description>Ermittle die Brennerstunden Stufe 1</description>
+    </command>
+    
+    <command name="getBrennerStunden2" protocmd="getaddr">
+      <addr>08AB</addr>
+      <len>4</len>
+      <unit>CS</unit>
+      <description>Ermittle die Brennerstunden Stufe 2</description>
+    </command>
+	
+    <command name="getPumpeStatusSp" protocmd="getaddr">
+      <addr>0845</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle den Status der Speicherladepumpe</description>
+    </command>
+    
+    <command name="getPumpeStatusZirku" protocmd="getaddr">
+      <addr>0846</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle den Status der Zirkulationspumpe</description>
+    </command> 
+	
+    <command name="getPumpeStatusHk" protocmd="getaddr">
+      <addr>2906</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Ermittle den Status der Pumpe</description>
+    </command>
+	
+    <command name="getErrorAktiv" protocmd="getaddr">
+      <addr>0847</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Sammelstörung aktiv </description>
+    </command>
+	
+    <command name="getBetriebsart" protocmd="getaddr">
+      <addr>2301</addr>
+      <len>1</len>
+      <unit>BA</unit>
+      <description>Aktuelle Betriebsart</description>
+    </command>
+	
+    <command name="setBetriebsart" protocmd="setaddr">
+      <addr>2301</addr>
+      <len>1</len>
+      <unit>BA</unit>
+      <description>Setze Betriebsart</description>
+    </command>
+	
+    <command name="getBetriebSpar" protocmd="getaddr">
+      <addr>2302</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Betriebsart Spar</description>
+    </command> 
+   
+    <command name="setBetriebSpar" protocmd="setaddr">
+      <addr>2302</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Setze Betriebsart Spar</description>
+    </command>
+	
+    <command name="getBetriebParty" protocmd="getaddr">
+      <addr>2303</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Betriebsart Party</description>
+    </command>
+	
+    <command name="setBetriebParty" protocmd="setaddr">
+      <addr>2303</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Setze Betriebsart Party</description>
+    </command>
+	
+    <command name="getNiveau" protocmd="getaddr">
+      <addr>2304</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Ermittle Niveau Heizkennlinie</description>
+    </command> 
+	
+    <command name="setNiveau" protocmd="setaddr">
+      <addr>2304</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Setze Niveau Heizkennlinie</description>
+    </command>
+	
+    <command name="getNeigung" protocmd="getaddr">
+      <addr>2305</addr>
+      <len>1</len>
+      <unit>UN</unit>
+      <description>Ermittle Neigung Heizkennlinie</description>
+    </command>
+    
+    <command name="setNeigung" protocmd="setaddr">
+      <addr>2305</addr>
+      <len>1</len>
+      <unit>UN</unit>
+      <description>Setze Neigung Heizkennlinie</description>
+    </command> 
+	
+    <command name="getTempRaumNorSoll" protocmd="getaddr">
+      <addr>2306</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Ermittle die Raumsolltemperatur normal in Grad C</description>
+    </command>
+    
+    <command name="setTempRaumNorSoll" protocmd="setaddr">
+      <addr>2306</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Setze die Raumsolltemperatur normal in Grad C</description>
+    </command>  
+   
+    <command name="getTempRaumRedSoll" protocmd="getaddr">
+      <addr>2307</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Ermittle die Raumsolltemperatur reduziert in Grad C</description>
+    </command>
+    
+    <command name="setTempRaumRedSoll" protocmd="setaddr">
+      <addr>2307</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Setze die Raumsolltemperatur reduziert in Grad C</description>
+    </command>  
+   
+    <command name="getTempRaumPartySoll" protocmd="getaddr">
+      <addr>2308</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Solltemperatur Partybetrieb</description>
+    </command>
+    
+    <command name="setTempRaumPartySoll" protocmd="setaddr">
+      <addr>2308</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Setze die Raumsolltemperatur Party in Grad C</description>
+    </command> 
+
+  </commands>
+</vito>

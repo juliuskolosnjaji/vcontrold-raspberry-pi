@@ -50,7 +50,7 @@ def get_ui_config() -> dict:
     return {
         "username": env.get("UI_USERNAME", "admin"),
         "password": env.get("UI_PASSWORD", "change-me"),
-        "vcontrold_main_xml": env.get("VCONTROLD_MAIN_XML_PATH", "/etc/vcontrold.xml"),
+        "vcontrold_main_xml": env.get("VCONTROLD_MAIN_XML_PATH", "/etc/vcontrold/vcontrold.xml"),
         "device_xml": env.get("DEVICE_XML_PATH", ""),
         "vclient_host": env.get("VCLIENT_HOST", "localhost"),
         "vclient_port": env.get("VCLIENT_PORT", "3002"),
@@ -140,18 +140,14 @@ def config_import():
                     shutil.copy2(target, backup)
                 shutil.copy2(tmp_path, target)
 
-                import subprocess
-
-                restart = subprocess.run(
-                    ["systemctl", "restart", "vcontrold"], capture_output=True, text=True, timeout=15
-                )
+                restart = diagnostics.restart_service("vcontrold")
                 status = diagnostics.service_status("vcontrold")
-                if restart.returncode == 0 and status["state"] == "active":
+                if restart["ok"] and status["state"] == "active":
                     message, message_ok = f"Config importiert nach {target}, vcontrold läuft.", True
                 else:
                     message, message_ok = (
                         f"Config importiert, aber vcontrold-Neustart fehlgeschlagen: "
-                        f"{restart.stderr or status['state']}",
+                        f"{restart['detail'] or status['state']}",
                         False,
                     )
             finally:
@@ -186,6 +182,75 @@ def write_env(path: pathlib.Path, values: dict) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
+def backup_and_write(target: pathlib.Path, content: str) -> None:
+    if target.exists():
+        backup = target.with_suffix(
+            target.suffix + f".bak.{datetime.datetime.now():%Y%m%d%H%M%S}"
+        )
+        shutil.copy2(target, backup)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+
+
+@app.route("/config-editor", methods=["GET", "POST"])
+def config_editor():
+    cfg = get_ui_config()
+    main_path = pathlib.Path(cfg["vcontrold_main_xml"])
+    device_path = pathlib.Path(cfg["device_xml"]) if cfg["device_xml"] else None
+
+    message = None
+    message_ok = None
+
+    main_content = request.form.get("main_content", "")
+    device_content = request.form.get("device_content", "")
+
+    if request.method == "POST":
+        errors = []
+        try:
+            ET.fromstring(main_content)
+        except ET.ParseError as exc:
+            errors.append(f"vcontrold.xml ungültig: {exc}")
+        if device_path is not None:
+            try:
+                ET.fromstring(device_content)
+            except ET.ParseError as exc:
+                errors.append(f"vito.xml ungültig: {exc}")
+
+        if errors:
+            message, message_ok = " / ".join(errors), False
+        else:
+            backup_and_write(main_path, main_content)
+            if device_path is not None:
+                backup_and_write(device_path, device_content)
+
+            restart = diagnostics.restart_service("vcontrold")
+            status = diagnostics.service_status("vcontrold")
+            if restart["ok"] and status["state"] == "active":
+                message, message_ok = "Gespeichert, Backup angelegt, vcontrold läuft.", True
+            else:
+                message, message_ok = (
+                    f"Gespeichert, aber vcontrold-Neustart fehlgeschlagen: "
+                    f"{restart['detail'] or status['state']}",
+                    False,
+                )
+    else:
+        main_content = main_path.read_text() if main_path.exists() else ""
+        device_content = (
+            device_path.read_text() if device_path is not None and device_path.exists() else ""
+        )
+
+    return render_template(
+        "config_editor.html",
+        cfg=cfg,
+        main_path=str(main_path),
+        device_path=str(device_path) if device_path else None,
+        main_content=main_content,
+        device_content=device_content,
+        message=message,
+        message_ok=message_ok,
+    )
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
     message = None
@@ -209,17 +274,13 @@ def settings():
                 write_env(MQTT_ENV_PATH, new_values)
                 current = new_values
 
-                import subprocess
-
                 restarted, failed = [], []
                 for service in MQTT_DEPENDENT_SERVICES:
                     status = diagnostics.service_status(service)
                     if status["state"] not in ("active",):
                         continue  # nur laufende Dienste neu starten, nicht versehentlich welche aktivieren
-                    result = subprocess.run(
-                        ["systemctl", "restart", service], capture_output=True, text=True, timeout=15
-                    )
-                    (restarted if result.returncode == 0 else failed).append(service)
+                    result = diagnostics.restart_service(service)
+                    (restarted if result["ok"] else failed).append(service)
 
                 message = "MQTT-Konfiguration gespeichert."
                 if restarted:
