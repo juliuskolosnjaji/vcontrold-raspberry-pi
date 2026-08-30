@@ -14,8 +14,14 @@
      (der <code>set_schlüssel</code> muss in <code>config/command_map.json</code> existieren).</p>
 
   <form method="post">
-    <label for="bitrate">CAN-Bitrate (Bit/s)</label>
-    <input type="number" id="bitrate" name="bitrate" value="{{ bitrate }}" min="1000" step="1000">
+    <label for="bitrate">CAN-Bitrate</label>
+    <select id="bitrate" name="bitrate">
+      {% for rate in [5000, 10000, 20000, 50000, 125000, 250000, 500000] %}
+      <option value="{{ rate }}" {% if bitrate == rate %}selected{% endif %}>
+        {{ rate // 1000 }} kBit/s{% if rate == 50000 %} (UVR16x2-Standard){% endif %}
+      </option>
+      {% endfor %}
+    </select>
 
     <label for="own_node_number">Eigene Knoten-Nummer</label>
     <input type="number" id="own_node_number" name="own_node_number" value="{{ own_node_number }}" min="1" max="62">
