@@ -17,6 +17,10 @@ Beispiel (bestätigter Weg, siehe README 3.3):
   sudo ip link set can1 up type can bitrate 50000
   venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65
 
+Mit --heartbeat meldet sich der Pi zusätzlich per CANopen-Bootup+Heartbeat als eigener
+Knoten an (z.B. damit er im TA-CMI unter einer bestimmten Node-Nummer auftaucht):
+  venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65 --own-node-id 60 --heartbeat
+
 Beispiel (unverifizierte Referenzindizes, vermutlich falsch für dieses Gerät):
   venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
 """
@@ -82,9 +86,14 @@ def main() -> None:
         help="Bestätigter Weg (siehe README 3.3): kompletten Datensatz (Objekt 0x4FF4:04) lesen statt --device",
     )
     parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], help="Nur mit den unverifizierten Referenzindizes, siehe ta_canopen.py")
-    parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63, nur für --handshake)")
+    parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63)")
     parser.add_argument("--uvr-node-id", type=int, required=True, help="Knoten-Nummer der UVR (Handbuch/Menü prüfen)")
     parser.add_argument("--handshake", action="store_true", help="TA-Verbindungsaufbau statt Standard-SDO-COB-IDs")
+    parser.add_argument(
+        "--heartbeat",
+        action="store_true",
+        help="Bootup + periodischen NMT-Heartbeat senden, damit der Pi z.B. im CMI als eigener Knoten auftaucht",
+    )
     parser.add_argument("--count", type=int, default=3, help="Anzahl Poll-Durchläufe (Standard: 3)")
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
     args = parser.parse_args()
@@ -96,6 +105,11 @@ def main() -> None:
     network = canopen.Network()
     network.bus = bus
     network.notifier = can.Notifier(bus, network.listeners)
+
+    heartbeat = None
+    if args.heartbeat:
+        heartbeat = ta.start_heartbeat(network, args.own_node_id)
+        print(f"Heartbeat gestartet (eigene Node-ID {args.own_node_id}, COB-ID 0x{0x700 | args.own_node_id:x})")
 
     conn = None
     if args.handshake:
@@ -124,6 +138,8 @@ def main() -> None:
         else:
             poll_uvr1611(node, args.count, args.delay)
     finally:
+        if heartbeat is not None:
+            heartbeat.stop()
         if conn is not None:
             conn.disconnect(args.uvr_node_id, node)
         else:

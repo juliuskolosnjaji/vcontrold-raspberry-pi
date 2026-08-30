@@ -30,6 +30,20 @@ import threading
 
 import canopen
 
+NMT_STATE_BOOTUP = 0x00
+NMT_STATE_OPERATIONAL = 0x05
+
+
+def start_heartbeat(network: canopen.Network, own_node_id: int, period: float = 1.0) -> canopen.network.PeriodicMessageTask:
+    """Sendet einmalig eine CANopen-Bootup-Nachricht und danach periodisch einen
+    Heartbeat (COB-ID 0x700+own_node_id) -- ohne das meldet sich der Pi bei keinem
+    Master (z.B. TA-CMI) als eigenständiger CANopen-Knoten an, auch wenn er per SDO
+    aktiv Anfragen stellt. Gibt ein Objekt mit .stop() zurück, um den Heartbeat beim
+    Beenden wieder abzuschalten."""
+    cob_id = 0x700 | (own_node_id & 0x7F)
+    network.send_message(cob_id, bytes([NMT_STATE_BOOTUP]))
+    return network.send_periodic(cob_id, bytes([NMT_STATE_OPERATIONAL]), period)
+
 # Bestätigter Datensatz-Zugriff (siehe Modul-Docstring): kompletter Datensatz statt
 # einzelner Werte, per SDO-Block-Transfer (canopen-Bibliothek handhabt das transparent
 # über node.sdo.upload(), solange der Block-Transfer standardkonform abläuft -- war
