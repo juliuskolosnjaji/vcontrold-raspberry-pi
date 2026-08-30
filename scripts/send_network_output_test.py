@@ -13,7 +13,9 @@ Je 4x signed int16 Little-Endian pro 8-Byte-Frame, /10 skaliert. Das ist vermutl
 der Grund, warum der vorherige Test mit 0x180 als Analog-Basis nichts bewirkt hat --
 0x180 ist laut dieser Quelle nur für Digital-Ausgänge.
 
-Noch NICHT gegen echte Hardware verifiziert -- genau dafür ist dieses Skript da.
+BESTÄTIGT gegen echte Hardware: Wert kommt korrekt am konfigurierten UVR-CAN-Analogeingang an.
+Voraussetzung dort: Feld "Messgröße" auf einen konkreten Typ (z.B. "Temperatur") stellen, sonst
+zeigt die UVR den rohen Ganzzahlwert unskaliert an ("Automatisch" reicht nicht).
 
 Kein systemd-Dienst, manuell ausführen:
   venv/bin/python scripts/send_network_output_test.py --own-node-id 60 --output 1 --value 12.3

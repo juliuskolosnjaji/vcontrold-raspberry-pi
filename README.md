@@ -304,14 +304,39 @@ doch mal unzuverlässig werden.
 ohne die ein Master zwar den Heartbeat sieht, aber auf eigene Anfragen keine Antwort bekommt:
 
 ```bash
-venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65 --own-node-id 60 --heartbeat
+venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 10 --own-node-id 60 --heartbeat
 ```
 
-**Noch offen:** Prüfsummen-Algorithmus (nicht sicherheitskritisch für reines Auslesen, aber gut für
-Validierung), genaue Kanalzuordnung der restlichen Slots, und der Schreib-Pfad (Pi → UVR) — dafür gibt
-es noch kein bestätigtes Objekt/Verfahren. `can_node.py`/`config/can_mapping.json` (Abschnitt 3.1)
-laufen deshalb weiterhin produktiv; die Umstellung auf diesen Weg ist der nächste Schritt, sobald die
-restlichen Slots zugeordnet sind.
+**Schreib-Pfad (Pi → UVR, Netzwerkeingang): bestätigt funktionsfähig.** Auf der UVR als
+"CAN-Analogeingang" mit Knotennummer + Ausgangsnummer des Senders konfiguriert (z.B. Knotennummer
+60, Ausgangsnummer 1) — die tatsächliche CAN-ID rechnet TA intern aus. COB-ID-Schema, aus zwei
+unabhängigen Community-Quellen bestätigt und gegen echte Hardware verifiziert
+([HA-Community-Guide](https://community.home-assistant.io/t/uvr16x2-via-canable-candlelight-home-assistant-no-c-m-i-full-guide/1011270),
+FHEM-CanOverEthernet-Modul):
+
+```
+0x180 + Knotennummer: Digital-Ausgänge 1-16
+0x200 + Knotennummer: Analog-Ausgänge 1-4
+0x280 + Knotennummer: Analog-Ausgänge 5-8
+0x300 + Knotennummer: Analog-Ausgänge 9-12
+0x380 + Knotennummer: Analog-Ausgänge 13-16
+```
+
+Je 8-Byte-Frame = 4x signed int16 Little-Endian, ×10 skaliert (Ausgang N an Position (N-1)%4 im
+Frame seines Blocks). Getestet mit `scripts/send_network_output_test.py`:
+
+```bash
+venv/bin/python scripts/send_network_output_test.py --own-node-id 60 --output 1 --value 12.3
+```
+
+Wert kam korrekt als `12,3 °C` am UVR-Analogeingang an — **Voraussetzung:** das Feld "Messgröße"
+des CAN-Analogeingangs auf der UVR muss auf den passenden Typ (z.B. "Temperatur") gestellt werden,
+sonst zeigt die UVR den rohen Ganzzahlwert unskaliert an (`123` statt `12,3`).
+
+**Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
+reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die produktive
+Integration dieses gesamten CANopen-Wegs in `can_node.py` (ersetzt dann `ta_can_protocol.py`s
+Blockkodierung aus Abschnitt 3.1, die weiterhin produktiv läuft, bis die Umstellung erfolgt ist).
 
 ## 4. Home Assistant einbinden
 
