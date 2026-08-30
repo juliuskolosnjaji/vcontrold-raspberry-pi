@@ -13,6 +13,24 @@
      lauten, um den empfangenen Wert auch als Set-Anfrage an den Orchestrator weiterzuleiten
      (der <code>set_schlüssel</code> muss in <code>config/command_map.json</code> existieren).</p>
 
+  <p><strong>Verfügbare Subtopic-Namen</strong> (aus
+     <a href="{{ url_for('read_cycles_settings') }}">Read-Zyklen</a>, für "Senden"-Kanäle
+     exakt so eintragen):
+     {% if available_subtopics %}
+       {% for name in available_subtopics %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+     {% else %}
+       <em>keine (Read-Zyklen noch nicht konfiguriert)</em>
+     {% endif %}
+  </p>
+  <p><strong>Verfügbare Set-Schlüssel</strong> (aus <code>config/command_map.json</code>, für
+     <code>&gt;set_schlüssel</code> bei "Empfangen"-Kanälen):
+     {% if available_set_keys %}
+       {% for name in available_set_keys %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+     {% else %}
+       <em>keine (command_map.json noch nicht angelegt)</em>
+     {% endif %}
+  </p>
+
   <form method="post">
     <label for="bitrate">CAN-Bitrate</label>
     <select id="bitrate" name="bitrate">

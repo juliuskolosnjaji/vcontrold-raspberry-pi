@@ -316,7 +316,7 @@ def settings():
     )
 
 
-CAN_BLOCK_ROWS = 4  # Anzahl editierbarer Zeilen pro Block-Kategorie (letzte leere Zeile = "neu hinzufügen")
+CAN_BLOCK_ROWS = 8  # Anzahl editierbarer Zeilen pro Block-Kategorie
 
 CAN_BLOCK_CATEGORIES = [
     ("tx_analog_blocks", "Senden: Analog (Pi → UVR)", True, False),
@@ -443,12 +443,21 @@ def can_settings():
             }
         )
 
+    available_subtopics = set()
+    for cycle in load_read_cycles().values():
+        available_subtopics.update(cycle.get("commands", {}).values())
+
+    command_map_path = PROJECT_ROOT / "config" / "command_map.json"
+    available_set_keys = sorted(json.loads(command_map_path.read_text()).keys()) if command_map_path.exists() else []
+
     return render_template(
         "can_settings.html",
         bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
         own_node_number=mapping.get("own_node_number", 1),
         categories=categories,
         num_rows=range(CAN_BLOCK_ROWS),
+        available_subtopics=sorted(available_subtopics),
+        available_set_keys=available_set_keys,
         message=message,
         message_ok=message_ok,
     )
