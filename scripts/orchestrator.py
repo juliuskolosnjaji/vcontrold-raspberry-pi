@@ -28,6 +28,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 import ha_discovery
@@ -80,6 +81,49 @@ def run_vclient(command: str) -> str | None:
     return lines[-1] if lines else None
 
 
+# Trennzeichen für Batch-Antworten: ein Steuerzeichen, das in keiner realen
+# Vitotronic-Antwort ("44.099998 Grad Celsius", "WW", ...) vorkommen kann.
+_BATCH_DELIMITER = "\x1f"
+
+
+def make_batch_template(cycle_name: str, count: int) -> str:
+    """vclient -t braucht eine Template-DATEI (kein Inline-String, siehe README/Chat-
+    Historie); $R1..$Rn sind die Rohtext-Rückgabewerte in Reihenfolge der -c-Kommandoliste.
+    Deterministischer Pfad pro Zyklus statt tempfile.NamedTemporaryFile, damit bei jedem
+    Neustart dieselbe Datei überschrieben wird statt sich in /tmp anzusammeln."""
+    safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", cycle_name)
+    path = pathlib.Path(tempfile.gettempdir()) / f"vcontrold-orchestrator-{safe_name}.vclient.tmpl"
+    path.write_text(_BATCH_DELIMITER.join(f"$R{i + 1}" for i in range(count)))
+    return str(path)
+
+
+def run_vclient_batch(commands: list[str], template_path: str) -> list[str | None]:
+    """Fragt mehrere Get-Kommandos in EINER vclient-Verbindung ab (statt einer TCP-
+    Verbindung pro Variable), via vclient -t (Template-Modus, siehe make_batch_template).
+    Gibt bei Erfolg genau len(commands) Werte zurück, bei Fehler eine gleich lange Liste
+    aus None (damit der Aufrufer jede Variable einzeln als fehlgeschlagen loggen kann)."""
+    try:
+        result = subprocess.run(
+            ["vclient", "-h", VCLIENT_HOST, "-p", VCLIENT_PORT, "-c", ",".join(commands), "-t", template_path],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        print(f"Fehler bei Batch-Anfrage ({len(commands)} Kommandos): {exc}", file=sys.stderr)
+        return [None] * len(commands)
+
+    values = result.stdout.strip("\n").split(_BATCH_DELIMITER)
+    if len(values) != len(commands):
+        print(
+            f"Batch-Antwort unerwartet ({len(values)} statt {len(commands)} Werte): {result.stdout!r}",
+            file=sys.stderr,
+        )
+        return [None] * len(commands)
+    return values
+
+
 class Orchestrator:
     def __init__(self):
         self.read_cycles = load_json(
@@ -90,6 +134,7 @@ class Orchestrator:
         )
         self.variables = vito_variables.load_variables()
         self._log_loaded_cycles()
+        self.cycle_batches = self._build_cycle_batches()
         self.client, env = make_client("orchestrator")
         self.topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
         self.topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
@@ -114,6 +159,24 @@ class Orchestrator:
                 print(f"  Zyklus '{name}' (alle {interval}s): {var_name} -> {status}")
             if not var_names:
                 print(f"  Zyklus '{name}' (alle {interval}s): keine Variablen konfiguriert")
+
+    def _build_cycle_batches(self) -> dict:
+        """Bereitet pro Zyklus einmalig (var_names, get_commands, template_path) vor, damit
+        run_due_cycles() alle Getter eines Zyklus in EINER vclient-Verbindung statt einer
+        pro Variable abfragen kann. Variablen ohne Getter wurden bereits in
+        _log_loaded_cycles() als Fehler geloggt und werden hier stillschweigend übersprungen."""
+        batches = {}
+        for name, cycle in self.read_cycles.items():
+            var_names = []
+            get_commands = []
+            for var_name in cycle.get("variables", []):
+                variable = self.variables.get(var_name)
+                if variable and variable.get("get"):
+                    var_names.append(var_name)
+                    get_commands.append(variable["get"])
+            template_path = make_batch_template(name, len(get_commands)) if get_commands else None
+            batches[name] = (var_names, get_commands, template_path)
+        return batches
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
@@ -174,12 +237,12 @@ class Orchestrator:
             if now < self.next_due[name]:
                 continue
             self.next_due[name] = now + cycle["interval_seconds"]
-            for var_name in cycle["variables"]:
-                variable = self.variables.get(var_name)
-                if variable is None or not variable.get("get"):
-                    print(f"Zyklus '{name}': Keine Getter-Definition für '{var_name}' in vito.xml gefunden", file=sys.stderr)
-                    continue
-                value = run_vclient(variable["get"])
+
+            var_names, get_commands, template_path = self.cycle_batches[name]
+            if not get_commands:
+                continue
+            values = run_vclient_batch(get_commands, template_path)
+            for var_name, value in zip(var_names, values):
                 if value is None:
                     print(f"Zyklus '{name}': '{var_name}' fehlgeschlagen (kein Wert von vclient)", file=sys.stderr)
                     continue
