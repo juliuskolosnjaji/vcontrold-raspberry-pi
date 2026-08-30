@@ -54,7 +54,7 @@ SENSOR_METADATA = {
     "Niveau": {"icon": "mdi:ray-vertex"},
     "Leistung": {"unit_of_measurement": "%", "icon": "mdi:fire"},
     "Verbrauch": {"unit_of_measurement": "m³", "device_class": "gas", "state_class": "total_increasing"},
-    "BrennerStarts": {"unit_of_measurement": "x", "state_class": "total_increasing", "icon": "mdi:counter"},
+    "BrennerStarts": {"unit_of_measurement": "x", "state_class": "total_increasing", "icon": "mdi:counter", "suggested_display_precision": 0},
     "BrennerStunden1": {"unit_of_measurement": "h", "device_class": "duration", "state_class": "total_increasing"},
     "BrennerStunden2": {"unit_of_measurement": "h", "device_class": "duration", "state_class": "total_increasing"},
 }
@@ -91,6 +91,7 @@ def build_sensor_config(key: str, state_topic: str, device: dict = None, id_pref
         "device": device or DEVICE_INFO,
     }
     config.update(SENSOR_METADATA.get(key, {}))
+    config.setdefault("suggested_display_precision", 1)
     return config
 
 
