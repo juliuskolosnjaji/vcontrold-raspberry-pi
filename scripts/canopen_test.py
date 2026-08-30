@@ -2,10 +2,16 @@
 """
 Eigenständiges CLI-Testwerkzeug für CANopen/SDO-Zugriff auf UVR1611/UVR16x2.
 
-Zweck: gegen echte Hardware verifizieren, ob ta_canopen.py's TA-Verbindungsaufbau
-und Objektverzeichnis-Indizes für dein konkretes Gerät funktionieren, BEVOR
-can_node.py in Produktivbetrieb darauf umgestellt wird (siehe README Abschnitt 3.3).
-Kein systemd-Dienst, manuell ausführen.
+Zweck: gegen echte Hardware verifizieren, ob Objektverzeichnis-Indizes und Verbindungsweg
+für dein konkretes Gerät funktionieren, BEVOR can_node.py in Produktivbetrieb darauf
+umgestellt wird (siehe README Abschnitt 3.3). Kein systemd-Dienst, manuell ausführen.
+
+Zwei Verbindungswege:
+  --direct (Standard): normale CANopen-SDO-COB-IDs (0x600+NodeID / 0x580+NodeID),
+    kein Verbindungsaufbau -- versuchen, falls per candump bereits Traffic auf genau
+    diesen COB-IDs zu sehen war (deutet auf direkte Standard-Unterstützung hin).
+  --handshake: TA-spezifischer Verbindungsaufbau aus ta_canopen.py (temporäre COB-ID
+    über 0x400|eigene_node_id anfordern) -- falls --direct nicht antwortet.
 
 Beispiel:
   sudo ip link set can1 up type can bitrate 50000
@@ -51,8 +57,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
     parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], required=True)
-    parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63)")
+    parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63, nur für --handshake)")
     parser.add_argument("--uvr-node-id", type=int, required=True, help="Knoten-Nummer der UVR (Handbuch/Menü prüfen)")
+    parser.add_argument("--handshake", action="store_true", help="TA-Verbindungsaufbau statt Standard-SDO-COB-IDs")
     parser.add_argument("--count", type=int, default=3, help="Anzahl Poll-Durchläufe (Standard: 3)")
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
     args = parser.parse_args()
@@ -62,23 +69,35 @@ def main() -> None:
     network.bus = bus
     network.notifier = can.Notifier(bus, network.listeners)
 
-    conn = ta.TAConnection(network, args.own_node_id)
-    print(f"Verbinde mit Knoten {args.uvr_node_id} (eigene Node-ID {args.own_node_id}) ...")
-    try:
-        node = conn.connect(args.uvr_node_id)
-    except ta.TAConnectionError as exc:
-        print(f"Verbindungsaufbau fehlgeschlagen: {exc}", file=sys.stderr)
-        print("Prüfen: can0 up + richtige Bitrate (50000)? uvr-node-id korrekt? Kabel/Termination?", file=sys.stderr)
-        sys.exit(1)
+    conn = None
+    if args.handshake:
+        conn = ta.TAConnection(network, args.own_node_id)
+        print(f"TA-Verbindungsaufbau zu Knoten {args.uvr_node_id} (eigene Node-ID {args.own_node_id}) ...")
+        try:
+            node = conn.connect(args.uvr_node_id)
+        except ta.TAConnectionError as exc:
+            print(f"Verbindungsaufbau fehlgeschlagen: {exc}", file=sys.stderr)
+            print(
+                f"Prüfen: {args.interface} up + richtige Bitrate (50000)? uvr-node-id korrekt? Kabel/Termination?",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"Verbunden, temporäre COB-ID: 0x{node.id:x}")
+    else:
+        print(f"Direkter Zugriff auf Standard-SDO-COB-IDs für Knoten {args.uvr_node_id} "
+              f"(0x{0x600 + args.uvr_node_id:x}/0x{0x580 + args.uvr_node_id:x}) ...")
+        node = network.add_node(args.uvr_node_id, ta.EDS_PATH)
 
-    print(f"Verbunden, temporäre COB-ID: 0x{node.id:x}")
     try:
         if args.device == "uvr16x2":
             poll_uvr16x2(node, args.count, args.delay)
         else:
             poll_uvr1611(node, args.count, args.delay)
     finally:
-        conn.disconnect(args.uvr_node_id, node)
+        if conn is not None:
+            conn.disconnect(args.uvr_node_id, node)
+        else:
+            network.remove_node(node.id)
         network.notifier.stop()
         bus.shutdown()
 
