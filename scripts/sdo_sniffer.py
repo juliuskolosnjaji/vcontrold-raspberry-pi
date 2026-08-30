@@ -3,10 +3,15 @@
 Passiver SDO-Sniffer: liest CANopen-SDO-Requests/Responses auf dem Bus mit,
 ohne selbst SDO-Transfers auszulösen -- nützlich, wenn (wie bei diesem Projekt
 festgestellt) bereits ein anderer Master (z.B. CMI) aktiv SDO-Zugriffe auf die
-UVR macht. Dekodiert Objektindex/Subindex/Wert nach CiA-301 (expedited transfer)
-und zeigt mehrere Zahlenformat-Kandidaten an, um die reale Bedeutung eines
-Objekts durch Abgleich mit einem bekannten Wert (z.B. Außentemperatur am
-UVR-Display) zu bestimmen.
+UVR macht. Dekodiert sowohl einzelne Werte (CiA-301 expedited transfer) als
+auch komplette Block-Transfers (mehrere 7-Byte-Segmente zu einem Datensatz
+zusammengesetzt -- bei diesem Projekt hat sich gezeigt, dass Objekt 0x4FF4:04
+ein 98-Byte-Datensatz ist, der so übertragen wird, vermutlich ein TA-eigenes
+"D-LOGG"/BL-NET-artiges Format mit Datum/Zeit + Werte-Array + CRLF-Ende).
+
+Zeigt bei jedem einzelnen Wert mehrere Zahlenformat-Kandidaten an, um die
+reale Bedeutung eines Objekts durch Abgleich mit einem bekannten Wert (z.B.
+Außentemperatur am UVR-Display) zu bestimmen.
 
 Kein systemd-Dienst, manuell ausführen:
   venv/bin/python scripts/sdo_sniffer.py --interface can1
@@ -20,11 +25,20 @@ import can
 SDO_TX_BASE = 0x580  # Server -> Client (Antwort)
 SDO_RX_BASE = 0x600  # Client -> Server (Anfrage)
 
+# Empirisch an diesem Gerät beobachtete Block-Transfer-Kommandobytes (CiA-301
+# Block-Upload, Client=Master/CMI, Server=UVR). Bit 0x80 in einem Segment-Byte
+# markiert das letzte Segment einer Teil-Sequenz.
+CMD_BLOCK_INITIATE_REQUEST = 0xA4   # Client -> Server: Block-Upload anfordern
+CMD_BLOCK_INITIATE_RESPONSE = 0xC6  # Server -> Client: Index/Subindex/Größe bestätigen
+CMD_BLOCK_START = 0xA3              # Client -> Server: Segmente anfordern
+CMD_BLOCK_ACK = 0xA2                # Client -> Server: Teil-Sequenz quittieren
+CMD_BLOCK_END_RESPONSE = 0xC1       # Server -> Client: Ende + CRC
+CMD_BLOCK_END_ACK = 0xA1            # Client -> Server: Transfer abschließen
+
 
 def decode_expedited(data: bytes) -> tuple[int, int, int, bytes] | None:
     """Gibt (index, subindex, size, wert_bytes) zurück, oder None falls kein
-    erkanntes expedited-Transfer-Kommando (segmentierte Transfers werden nicht
-    unterstützt -- für die meisten TA-Werte reicht expedited, da <= 4 Byte)."""
+    erkanntes expedited-Transfer-Kommando."""
     if len(data) < 4:
         return None
     cmd = data[0]
@@ -63,6 +77,41 @@ def format_candidates(value_bytes: bytes) -> str:
     return " | ".join(candidates)
 
 
+class BlockTransferTracker:
+    """Setzt CiA-301-Block-Upload-Segmente (Server -> Client) zu einem kompletten
+    Datensatz zusammen. Ein Objekt pro beobachtetem Node -- mehrere Transfers
+    nacheinander auf demselben Node werden nacheinander verarbeitet."""
+
+    def __init__(self):
+        self.index = None
+        self.subindex = None
+        self.declared_size = None
+        self.segments: dict[int, bytes] = {}
+
+    def on_initiate_response(self, data: bytes) -> None:
+        self.index = data[1] | (data[2] << 8)
+        self.subindex = data[3]
+        (self.declared_size,) = struct.unpack("<I", data[4:8])
+        self.segments = {}
+
+    def on_segment(self, data: bytes) -> bytes | None:
+        """Nimmt ein Segment entgegen, gibt den kompletten Datensatz zurück, sobald
+        das letzte Segment (Bit 0x80 gesetzt) angekommen ist, sonst None."""
+        seq_byte = data[0]
+        is_last = bool(seq_byte & 0x80)
+        seq = seq_byte & 0x7F
+        self.segments[seq] = data[1:8]
+        if not is_last:
+            return None
+        payload = b"".join(self.segments[s] for s in sorted(self.segments))
+        if self.declared_size is not None:
+            payload = payload[: self.declared_size]
+        self.segments = {}
+        self.declared_size = None  # Transfer abgeschlossen, sonst würden spätere normale
+        # Expedited-Antworten (cmd-Byte zufällig in 0x01-0x7F) als Segmente fehlinterpretiert.
+        return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
@@ -70,22 +119,54 @@ def main() -> None:
     args = parser.parse_args()
 
     bus = can.interface.Bus(channel=args.interface, interface="socketcan")
+    trackers: dict[int, BlockTransferTracker] = {}
     print(f"Höre auf {args.interface} für SDO-Requests/Responses (Strg+C zum Beenden) ...")
     try:
         for msg in bus:
             can_id = msg.arbitration_id
             if SDO_RX_BASE <= can_id < SDO_RX_BASE + 0x80:
-                node_id, direction = can_id - SDO_RX_BASE, "-> Anfrage"
+                node_id, direction, from_server = can_id - SDO_RX_BASE, "-> Anfrage", False
             elif SDO_TX_BASE <= can_id < SDO_TX_BASE + 0x80:
-                node_id, direction = can_id - SDO_TX_BASE, "<- Antwort"
+                node_id, direction, from_server = can_id - SDO_TX_BASE, "<- Antwort", True
             else:
                 continue
             if args.node_id is not None and node_id != args.node_id:
                 continue
 
-            decoded = decode_expedited(msg.data)
+            data = msg.data
+            cmd = data[0] if data else None
+            tracker = trackers.setdefault(node_id, BlockTransferTracker())
+
+            if from_server and cmd == CMD_BLOCK_INITIATE_RESPONSE:
+                tracker.on_initiate_response(data)
+                print(
+                    f"Node {node_id:3d} <- Block-Upload-Start: Objekt 0x{tracker.index:04X}:{tracker.subindex:02X} "
+                    f"({tracker.declared_size} Byte angekündigt)"
+                )
+                continue
+
+            if from_server and tracker.declared_size is not None and cmd is not None and 0x01 <= (cmd & 0x7F) <= 0x7F and cmd not in (
+                CMD_BLOCK_END_RESPONSE,
+            ):
+                payload = tracker.on_segment(data)
+                if payload is None:
+                    continue
+                print(
+                    f"Node {node_id:3d} <- Block-Upload komplett: Objekt 0x{tracker.index:04X}:{tracker.subindex:02X} "
+                    f"({len(payload)} Byte)\n  raw={payload.hex()}"
+                )
+                if payload.endswith(b"\r\n"):
+                    print(f"  endet mit CRLF (0d0a), letzte 4 Byte vor CRLF vermutlich Prüfsumme: {payload[-6:-2].hex()}")
+                continue
+
+            if cmd in (CMD_BLOCK_INITIATE_REQUEST, CMD_BLOCK_START, CMD_BLOCK_ACK, CMD_BLOCK_END_ACK):
+                continue  # Steuerbytes des Block-Transfers, kein eigener Informationswert für uns
+            if from_server and cmd == CMD_BLOCK_END_RESPONSE:
+                continue  # CRC-Bestätigung, im Datensatz selbst schon sichtbar
+
+            decoded = decode_expedited(data)
             if decoded is None:
-                print(f"Node {node_id:3d} {direction}: unbekanntes Format, data={msg.data.hex()}")
+                print(f"Node {node_id:3d} {direction}: unbekanntes Format, data={data.hex()}")
                 continue
             index, subindex, size, value_bytes = decoded
             if size == 0:
