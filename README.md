@@ -242,3 +242,18 @@ Falls `sudo systemctl status vcontrold` `failed` zeigt, in dieser Reihenfolge pr
 6. **`Error communicating with the server` bei `vclient`:** vcontrold läuft, kann aber nicht mit der Heizung
    sprechen — meist weil der Optolink-USB-Adapter nicht eingesteckt ist oder `<tty>` in `vcontrold.xml` nicht
    auf das richtige Gerät zeigt (`ls -l /dev/ttyUSB0` bzw. `/dev/optolink` prüfen).
+
+## Troubleshooting: orchestrator.service verbindet sich nicht mit MQTT
+
+`ConnectionRefusedError` in `journalctl -u orchestrator.service` bedeutet: der Host ist erreichbar,
+aber nichts hört auf dem angegebenen Port. Häufigste Ursache: **`homeassistant.local` (mDNS) löst
+im eigenen Netzwerk auf die falsche IP auf.** Prüfen:
+
+```bash
+getent hosts homeassistant.local
+nc -zv homeassistant.local 1883   # falls "Connection refused": IP stimmt nicht
+nc -zv <echte-ip-von-home-assistant> 1883   # zum Vergleich
+```
+
+Falls die mDNS-Auflösung falsch liegt: in `config/mqtt.env` statt des Hostnamens direkt die
+**feste IP-Adresse** deines Home-Assistant-Rechners eintragen, dann `sudo systemctl restart orchestrator`.

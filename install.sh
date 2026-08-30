@@ -108,10 +108,12 @@ chown "${REAL_USER}:${REAL_USER}" \
 # 7. systemd-Units installieren (Platzhalter __INSTALL_DIR__ ersetzen)
 # ---------------------------------------------------------------------------
 echo "==> Installiere systemd-Units"
+shopt -s nullglob
 for unit in "${INSTALL_DIR}"/systemd/*.service "${INSTALL_DIR}"/systemd/*.timer; do
   name="$(basename "${unit}")"
   sed "s#__INSTALL_DIR__#${INSTALL_DIR}#g" "${unit}" > "/etc/systemd/system/${name}"
 done
+shopt -u nullglob
 systemctl daemon-reload
 
 # vcontrold, can0-up und die UI können sicher automatisch starten
