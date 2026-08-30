@@ -211,6 +211,12 @@ Um einem weiteren Datenpunkt eine Number/Select-Entity zu geben, in `config/comm
 `"discovery"`-Block ergänzen (`{"component": "number", "unit": "...", "min": ..., "max": ..., "step": ...}`
 oder `{"component": "select", "options": [...]}`) und `orchestrator` neu starten.
 
+**CAN-Empfangswerte (UVR → Pi):** Diese haben keine Entsprechung in `vito.xml` und werden deshalb
+separat von `can_node.py` discovered — jeder in `config/can_mapping.json` unter `rx_analog_blocks`/
+`rx_digital_blocks` konfigurierte Kanal bekommt automatisch eine Sensor-Entity unter einem eigenen
+Gerät "UVR16x2 (CAN)" in Home Assistant, sobald `can-node` (neu) startet. Gilt für jeden Kanalnamen,
+egal ob er zufällig mit einer vito.xml-Variable übereinstimmt oder komplett frei erfunden ist.
+
 **Alternativ manuell:** `homeassistant/configuration_snippet.yaml` enthält dieselben Entities als
 statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
 

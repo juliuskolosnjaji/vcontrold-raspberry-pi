@@ -23,6 +23,13 @@ DEVICE_INFO = {
     "model": "Vitotronic V200KW1",
 }
 
+CAN_DEVICE_INFO = {
+    "identifiers": ["vcontrold_uvr_can"],
+    "name": "UVR16x2 (CAN)",
+    "manufacturer": "Technische Alternative",
+    "model": "UVR16x2",
+}
+
 # Kanonischer vito.xml-Variablenname -> {unit_of_measurement, device_class} für hübschere Sensoren.
 SENSOR_METADATA = {
     "TempAist": {"unit_of_measurement": "°C", "device_class": "temperature"},
@@ -40,16 +47,16 @@ def _friendly_name(key: str) -> str:
     return vito_variables.friendly_name(key)
 
 
-def _unique_id(key: str) -> str:
-    return f"vcontrold_{key}"
+def _unique_id(key: str, id_prefix: str = "vcontrold") -> str:
+    return f"{id_prefix}_{key}"
 
 
-def build_sensor_config(key: str, state_topic: str) -> dict:
+def build_sensor_config(key: str, state_topic: str, device: dict = None, id_prefix: str = "vcontrold") -> dict:
     config = {
         "name": _friendly_name(key),
-        "unique_id": _unique_id(key),
+        "unique_id": _unique_id(key, id_prefix),
         "state_topic": state_topic,
-        "device": DEVICE_INFO,
+        "device": device or DEVICE_INFO,
     }
     config.update(SENSOR_METADATA.get(key, {}))
     return config
@@ -113,4 +120,32 @@ def publish_discovery(
     for key in all_subtopics - published:
         config = build_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
         topic = f"{discovery_prefix}/sensor/{_unique_id(key)}/config"
+        client.publish(topic, json.dumps(config), retain=True)
+
+
+def _rx_channel_names(blocks: list) -> set:
+    names = set()
+    for block in blocks:
+        for channel in block.get("channels", []):
+            if channel is None:
+                continue
+            names.add(channel["topic"] if isinstance(channel, dict) else channel)
+    return names
+
+
+def publish_can_discovery(client, discovery_prefix: str, can_mapping: dict, topic_uvr: str) -> None:
+    """
+    Published Sensor-Discovery für alle CAN-Empfangs-Kanäle (UVR -> Pi), die in
+    config/can_mapping.json unter rx_analog_blocks/rx_digital_blocks konfiguriert sind.
+    Diese Kanäle haben keine Entsprechung in vito.xml -- ohne das hier würden sie zwar
+    per MQTT ankommen (uvr/<kanal>), aber nie automatisch als Home-Assistant-Entity auftauchen.
+    """
+    names = _rx_channel_names(can_mapping.get("rx_analog_blocks", []))
+    names |= _rx_channel_names(can_mapping.get("rx_digital_blocks", []))
+
+    for name in names:
+        config = build_sensor_config(
+            name, state_topic=f"{topic_uvr}/{name}", device=CAN_DEVICE_INFO, id_prefix="vcontrold_uvr"
+        )
+        topic = f"{discovery_prefix}/sensor/{_unique_id(name, 'vcontrold_uvr')}/config"
         client.publish(topic, json.dumps(config), retain=True)

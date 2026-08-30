@@ -24,6 +24,7 @@ import sys
 
 import can
 
+import ha_discovery
 import ta_can_protocol as proto
 from mqtt_common import make_client
 
@@ -84,6 +85,8 @@ def main() -> None:
     mapping = load_mapping()
     client, env = make_client("can-node")
     uvr_topic_prefix = env.get("MQTT_TOPIC_UVR", "uvr")
+    discovery_enabled = env.get("MQTT_DISCOVERY_ENABLED", "true").lower() not in ("false", "0", "no")
+    discovery_prefix = env.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
 
     configure_interface(CAN_INTERFACE, mapping.get("bitrate", proto.DEFAULT_BITRATE))
 
@@ -122,6 +125,9 @@ def main() -> None:
     def on_connect(mqtt_client, userdata, flags, rc):
         mqtt_client.subscribe(f"{TOPIC_TX_VALUE}/#")
         print(f"Abonniert: {TOPIC_TX_VALUE}/#")
+        if discovery_enabled:
+            ha_discovery.publish_can_discovery(mqtt_client, discovery_prefix, mapping, uvr_topic_prefix)
+            print(f"CAN-MQTT-Discovery published (Prefix: {discovery_prefix})")
 
     def on_message(mqtt_client, userdata, msg):
         channel = msg.topic.rsplit("/", 1)[-1]

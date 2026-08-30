@@ -43,5 +43,8 @@ def try_load_variables(path: str = DEFAULT_VITO_XML_PATH) -> dict:
 
 
 def friendly_name(variable_name: str) -> str:
-    """CamelCase-Variablennamen für Anzeigezwecke lesbarer machen: "TempRaumNorSoll" -> "Temp Raum Nor Soll"."""
-    return re.sub(r"(?<!^)(?=[A-Z])", " ", variable_name).replace("_", " ").strip()
+    """Namen für Anzeigezwecke lesbarer machen: "TempRaumNorSoll" -> "Temp Raum Nor Soll",
+    "uvr_kollektortemperatur" -> "Uvr Kollektortemperatur" (funktioniert für CamelCase wie
+    für snake_case UVR-Kanalnamen)."""
+    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", variable_name).replace("_", " ").strip()
+    return " ".join(word.capitalize() for word in spaced.split())
