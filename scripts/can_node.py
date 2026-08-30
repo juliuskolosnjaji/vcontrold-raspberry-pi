@@ -31,7 +31,7 @@ import ha_discovery
 import ta_can_protocol as proto
 from mqtt_common import make_client
 
-CAN_INTERFACE = "can0"
+CAN_INTERFACE = "can1"
 CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 CAN_MAPPING_PATH = CONFIG_DIR / "can_mapping.json"
 CAN_VARIABLES_PATH = CONFIG_DIR / "can_variables.json"
@@ -99,7 +99,7 @@ def resolve_numeric_value(can_variables: dict, channel: str, payload: str) -> fl
 
 
 def configure_interface(interface: str, bitrate: int) -> None:
-    """Setzt die konfigurierte Bitrate, unabhängig davon, was can0-up.service schon gesetzt hat."""
+    """Setzt die konfigurierte Bitrate, unabhängig davon, was can1-up.service schon gesetzt hat."""
     subprocess.run(["ip", "link", "set", interface, "down"], check=False)
     result = subprocess.run(
         ["ip", "link", "set", interface, "up", "type", "can", "bitrate", str(bitrate)],

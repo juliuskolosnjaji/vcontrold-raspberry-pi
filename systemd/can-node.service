@@ -1,7 +1,7 @@
 [Unit]
 Description=CAN-Node (bidirektionale CAN-Anbindung zur UVR16x2)
-After=network.target can0-up.service
-Requires=can0-up.service
+After=network.target can1-up.service
+Requires=can1-up.service
 
 [Service]
 Type=simple

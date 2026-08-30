@@ -8,8 +8,8 @@ can_node.py in Produktivbetrieb darauf umgestellt wird (siehe README Abschnitt 3
 Kein systemd-Dienst, manuell ausführen.
 
 Beispiel:
-  sudo ip link set can0 up type can bitrate 50000
-  venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 1
+  sudo ip link set can1 up type can bitrate 50000
+  venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
 """
 import argparse
 import sys
@@ -19,8 +19,6 @@ import can
 import canopen
 
 import ta_canopen as ta
-
-CAN_INTERFACE = "can0"
 
 
 def poll_uvr16x2(node: canopen.RemoteNode, count: int, delay: float) -> None:
@@ -51,6 +49,7 @@ def poll_uvr1611(node: canopen.RemoteNode, count: int, delay: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
     parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], required=True)
     parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63)")
     parser.add_argument("--uvr-node-id", type=int, required=True, help="Knoten-Nummer der UVR (Handbuch/Menü prüfen)")
@@ -58,7 +57,7 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
     args = parser.parse_args()
 
-    bus = can.interface.Bus(channel=CAN_INTERFACE, interface="socketcan")
+    bus = can.interface.Bus(channel=args.interface, interface="socketcan")
     network = canopen.Network()
     network.bus = bus
     network.notifier = can.Notifier(bus, network.listeners)

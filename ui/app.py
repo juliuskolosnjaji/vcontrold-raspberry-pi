@@ -60,12 +60,12 @@ def get_ui_config() -> dict:
         "device_xml": env.get("DEVICE_XML_PATH", ""),
         "vclient_host": env.get("VCLIENT_HOST", "localhost"),
         "vclient_port": env.get("VCLIENT_PORT", "3002"),
-        "can_interface": env.get("CAN_INTERFACE", "can0"),
+        "can_interface": env.get("CAN_INTERFACE", "can1"),
         "services": [
             s.strip()
             for s in env.get(
                 "MONITORED_SERVICES",
-                "vcontrold,orchestrator,can-node,can0-up",
+                "vcontrold,orchestrator,can-node,can1-up",
             ).split(",")
             if s.strip()
         ],

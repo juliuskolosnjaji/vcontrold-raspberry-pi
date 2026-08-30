@@ -17,7 +17,7 @@ sudo bash install.sh
 - Python-venv mit allen Abhängigkeiten (`venv/`)
 - CAN-Overlay (Waveshare 2-CH CAN HAT+) in der Boot-Config aktivieren
 - Config-Dateien aus den `.example`-Vorlagen anlegen
-- Alle systemd-Dienste installieren (vcontrold, UI und `can0-up` werden direkt gestartet;
+- Alle systemd-Dienste installieren (vcontrold, UI und `can1-up` werden direkt gestartet;
   die MQTT-Bridges erst nach deiner manuellen Konfiguration, siehe Ausgabe am Ende des Skripts)
 
 Am Ende zeigt das Skript eine Checkliste der noch nötigen manuellen Schritte (Protokoll wählen,
@@ -52,7 +52,7 @@ Viessmann Vitogas100 --Optolink--> USB --> vcontrold (daemon, Port 3002)
                                    - empfängt CAN-Frames von der UVR, published sie und
                                      leitet Set-Anfragen an den Orchestrator weiter
                                              |
-                                       Waveshare 2-CH CAN HAT+ (can0)
+                                       Waveshare 2-CH CAN HAT+ (can1)
                                              |
                                 Technische Alternative UVR16x2 (CAN-Bus)
 ```
@@ -149,7 +149,7 @@ Der Orchestrator braucht **kein** CAN-Mapping, um zu laufen — die Read-Zyklen 
 
 ## 3. CAN-Bus (Technische Alternative UVR) an MQTT — bidirektional
 
-Hardware: [Waveshare 2-CH CAN HAT+](https://www.waveshare.com/wiki/2-CH_CAN_HAT+) (2× MCP2515 über SPI1, in Reihe zwei CAN-Kanäle can0/can1 — für die UVR wird nur can0 genutzt). SPI + CAN-Overlay aktivieren in `/boot/config.txt` (bzw. `/boot/firmware/config.txt` auf neueren Raspbian-Versionen):
+Hardware: [Waveshare 2-CH CAN HAT+](https://www.waveshare.com/wiki/2-CH_CAN_HAT+) (2× MCP2515 über SPI1, in Reihe zwei CAN-Kanäle can0/can1 — für die UVR wird nur can1 genutzt, weil das UVR-Kabel an diesem Anschluss des Boards hängt). SPI + CAN-Overlay aktivieren in `/boot/config.txt` (bzw. `/boot/firmware/config.txt` auf neueren Raspbian-Versionen):
 
 ```
 dtparam=spi=on
@@ -161,12 +161,14 @@ dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13
 
 Das sind die Werte für die **Standardverlötung** des Boards (INT_0 auf GPIO22, INT_1 auf GPIO13). `spi1-1` wird `can0`, `spi1-2` wird `can1`. Falls die Lötbrücken auf deinem Board umgesetzt wurden (siehe Wiki-Seite), die `interrupt=`-Werte entsprechend anpassen. `install.sh` schreibt diese Zeilen automatisch in die Boot-Config.
 
-CAN-Interface hochfahren (Standard-Bus-Geschwindigkeit der UVR16x2 ist **50 kBit/s** laut Handbuch — falls deine UVR-Konfiguration eine andere Bitrate zeigt, in den CAN-Einstellungen der Web-UI anpassen, siehe Abschnitt 3.1). `install.sh` installiert und startet `can0-up.service` bereits automatisch; manuell:
+**Hinweis:** dieses Projekt nutzt `can1` für die UVR (nicht `can0`) — schlicht weil das UVR-Kabel am `spi1-2`/`can1`-Anschluss des Waveshare-Boards angeschlossen ist. Falls dein Kabel am anderen Anschluss hängt, überall `can0` statt `can1` verwenden.
+
+CAN-Interface hochfahren (Standard-Bus-Geschwindigkeit der UVR16x2 ist **50 kBit/s** laut Handbuch — falls deine UVR-Konfiguration eine andere Bitrate zeigt, in den CAN-Einstellungen der Web-UI anpassen, siehe Abschnitt 3.1). `install.sh` installiert und startet `can1-up.service` bereits automatisch; manuell:
 
 ```bash
-sudo cp systemd/can0-up.service /etc/systemd/system/
+sudo cp systemd/can1-up.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now can0-up
+sudo systemctl enable --now can1-up
 ```
 
 `scripts/can_node.py` läuft als eigener systemd-Dienst und ist der **einzige** Prozess, der den CAN-Socket öffnet — getrennt vom Orchestrator, damit ein CAN-Decoder-Fehler nicht auch die Vcontrold-Zyklen und MQTT-Befehlsverarbeitung lahmlegt. Er kommuniziert mit `orchestrator.py` ausschließlich über interne MQTT-Topics (`internal/can/tx/*`, `internal/can/rx_set/*`).
@@ -235,7 +237,7 @@ Damit der Wert tatsächlich über CAN läuft, den **gleichen Namen** zusätzlich
 Write-Slot (und optional einem Read-Slot, falls die UVR den Wert bestätigend zurücksendet) in
 den CAN-Einstellungen der Web-UI eintragen — siehe Abschnitt 6.
 
-### 3.3 CANopen/SDO — experimenteller Alternativweg (noch nicht produktiv verdrahtet)
+### 3.3 CANopen/SDO — experimenteller Alternativweg
 
 Recherche zweier Community-Quellen (Forum-Thread
 [holzheizer-forum.de/thread/61195](https://www.holzheizer-forum.de/forum/thread/61195-uvr16x2-via-can-mit-raspberry-koppeln-ohne-cmi/)
@@ -245,26 +247,32 @@ und das reale, funktionierende Python-Projekt
 Format wie in Abschnitt 3.1 angenommen. Es gibt konkrete, bekannte Objektverzeichnis-Indizes statt
 "CAN-ID + Byte-Offset per Sniffer raten".
 
+**Bestätigt per `candump can1`:** auf dem echten Bus laufen bereits Standard-CANopen-SDO-Frames
+(`0x641`/`0x5C1` = Client→Server/Server→Client-Paar) mit **Node-ID 65 (0x41)** als Ziel — vermutlich
+von einem bereits vorhandenen Master (z.B. CMI). Zusätzlich TPDO-Traffic (`0x481`) von einem
+zweiten TA-Gerät mit Node-ID 1. Das bestätigt: CANopen SDO ist real auf diesem Bus im Einsatz, und
+die UVR16x2 selbst läuft unter Node-ID 65, nicht 1.
+
 **Was das ändert:** statt CAN-IDs/Byte-Slots empirisch per Sniffer zu ermitteln (Abschnitt 3.1),
 könnten Werte direkt über feste Objektindizes gelesen werden (z.B. UVR16x2-Eingang 1 = Objekt
 `0x8272`, Subindex 1).
 
-**Was noch fehlt:** die Community warnt ausdrücklich, TA weiche in Details vom CANopen-Standard ab
-(eigener Verbindungsaufbau vor dem eigentlichen SDO-Zugriff, siehe `scripts/ta_canopen.py`
-Modul-Docstring). Das ist **gegen echte Hardware noch nicht verifiziert** — CAN-Kabel zur UVR liegt
-bislang nicht. Deshalb ersetzt dieser Weg aktuell **nicht** das produktiv laufende
+**Was noch offen ist:** ob `ta_canopen.py`s TA-spezifischer Verbindungsaufbau (eigener Handshake
+vor dem eigentlichen SDO-Zugriff, siehe Modul-Docstring) für dieses Gerät exakt stimmt, und ob die
+übernommenen Objektindizes zur genauen Firmware-Version passen — beides noch nicht per
+`canopen_test.py` bestätigt. Deshalb ersetzt dieser Weg aktuell **nicht** das produktiv laufende
 `can_node.py`/`config/can_mapping.json`-System aus 3.1, sondern steht als eigenständig testbares
 Werkzeug daneben:
 
 ```bash
-sudo ip link set can0 up type can bitrate 50000
-venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 1
+sudo ip link set can1 up type can bitrate 50000
+venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
 ```
 
 `--uvr-node-id` ist die im UVR-Menü/Handbuch eingestellte Knoten-Nummer des Reglers (nicht die
-eigene). Bei Erfolg gibt das Skript alle 16 Eingangswerte inkl. Einheit aus. Schlägt der
-Verbindungsaufbau fehl (Timeout/COB-ID 0): Bitrate, Verkabelung/Terminierung und Knoten-Nummer
-prüfen.
+eigene) — in diesem Projekt per `candump` als **65** bestätigt. Bei Erfolg gibt das Skript alle 16
+Eingangswerte inkl. Einheit aus. Schlägt der Verbindungsaufbau fehl (Timeout/COB-ID 0): Bitrate,
+Verkabelung/Terminierung und Knoten-Nummer prüfen.
 
 **Sobald `canopen_test.py` gegen die echte UVR funktioniert**, wird `can_node.py` in einem
 Folgeschritt auf diesen Weg umgestellt (ersetzt dann `ta_can_protocol.py`s Blockkodierung für den
@@ -305,7 +313,7 @@ Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
 - **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, und je Spalte (Senden/Empfangen × Analog/Digital) 16 Slots, jeder per Dropdown mit einer vito.xml-Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
 - **Variablen**: die zentrale Seite — zeigt alle aus `vito.xml` extrahierten Getter/Setter als Tabelle. Pro Variable per Dropdown einem Zyklus zuordnen (ersetzt manuelles Editieren von `config/read_cycles.json`) und per Checkbox festlegen, ob sie per MQTT/CAN setzbar sein soll, inkl. Home-Assistant-Discovery-Metadaten (Einheit, Min/Max/Step oder Auswahloptionen). Ersetzt manuelles Editieren von `config/command_map.json`. Speichern startet `orchestrator` (falls aktiv) automatisch neu.
-- **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
+- **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can1-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 
 `install.sh` legt `ui/ui.env` aus der Vorlage an und startet den Dienst bereits automatisch. Danach unbedingt:

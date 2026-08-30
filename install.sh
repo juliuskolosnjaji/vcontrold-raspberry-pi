@@ -4,7 +4,7 @@
 #
 # Installiert vcontrold, richtet eine Python-venv mit allen Abhängigkeiten ein,
 # aktiviert das CAN-Overlay (Waveshare 2-CH CAN HAT+, MCP2515 über SPI1) und
-# installiert alle systemd-Dienste (vcontrold, can0-up und die Web-UI starten
+# installiert alle systemd-Dienste (vcontrold, can1-up und die Web-UI starten
 # sofort; orchestrator.service und can-node.service werden installiert, aber
 # NICHT automatisch gestartet, da sie erst config/mqtt.env, config/command_map.json,
 # config/read_cycles.json und config/can_mapping.json benötigen).
@@ -81,7 +81,7 @@ if [[ -n "${BOOT_CONFIG}" ]] && ! grep -q "mcp2515,spi1-1" "${BOOT_CONFIG}"; the
     echo "dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13"
   } >> "${BOOT_CONFIG}"
   echo "    Hinweis: spi1-1/INT=22 wird can0, spi1-2/INT=13 wird can1 (Standardverlötung"
-  echo "    des Boards). Für die UVR wird nur can0 genutzt. Neustart erforderlich."
+  echo "    des Boards). Für die UVR wird nur can1 genutzt (siehe README Abschnitt 3). Neustart erforderlich."
   REBOOT_NEEDED=1
 else
   echo "==> CAN-Overlay bereits vorhanden oder Boot-Config nicht gefunden, übersprungen"
@@ -118,10 +118,10 @@ done
 shopt -u nullglob
 systemctl daemon-reload
 
-# vcontrold, can0-up und die UI können sicher automatisch starten
+# vcontrold, can1-up und die UI können sicher automatisch starten
 systemctl enable --now vcontrold
 if [[ "${REBOOT_NEEDED}" -eq 0 ]]; then
-  systemctl enable --now can0-up || echo "    can0-up konnte nicht gestartet werden (CAN-Interface evtl. noch nicht bereit)"
+  systemctl enable --now can1-up || echo "    can1-up konnte nicht gestartet werden (CAN-Interface evtl. noch nicht bereit)"
 fi
 systemctl enable --now vcontrold-ui
 

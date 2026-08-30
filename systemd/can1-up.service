@@ -1,0 +1,15 @@
+[Unit]
+Description=Bring up can1 interface for Waveshare 2-CH CAN HAT+
+After=network.target
+Before=can-node.service
+
+[Service]
+Type=oneshot
+# Idempotent: falls can1 schon (z.B. manuell) hochgefahren ist, erst runter- und wieder
+# hochfahren, statt mit "Device or resource busy" zu scheitern.
+ExecStartPre=-/sbin/ip link set can1 down
+ExecStart=/sbin/ip link set can1 up type can bitrate 50000
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
