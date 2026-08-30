@@ -62,15 +62,17 @@ def build_sensor_config(key: str, state_topic: str, device: dict = None, id_pref
     return config
 
 
-def build_writable_config(key: str, state_topic: str, command_topic: str, discovery_opts: dict) -> tuple[str, dict]:
+def build_writable_config(
+    key: str, state_topic: str, command_topic: str, discovery_opts: dict, device: dict = None, id_prefix: str = "vcontrold"
+) -> tuple[str, dict]:
     """Gibt (component, config) zurück, component ist 'number' oder 'select'."""
     component = discovery_opts.get("component", "number")
     config = {
         "name": _friendly_name(key),
-        "unique_id": _unique_id(key),
+        "unique_id": _unique_id(key, id_prefix),
         "state_topic": state_topic,
         "command_topic": command_topic,
-        "device": DEVICE_INFO,
+        "device": device or DEVICE_INFO,
     }
     if component == "number":
         for field in ("min", "max", "step"):
@@ -133,17 +135,45 @@ def _rx_channel_names(blocks: list) -> set:
     return names
 
 
-def publish_can_discovery(client, discovery_prefix: str, can_mapping: dict, topic_uvr: str) -> None:
+def publish_can_discovery(
+    client, discovery_prefix: str, can_mapping: dict, topic_uvr: str, topic_cmd_uvr: str, can_variables: dict = None
+) -> None:
     """
-    Published Sensor-Discovery für alle CAN-Empfangs-Kanäle (UVR -> Pi), die in
-    config/can_mapping.json unter rx_analog_blocks/rx_digital_blocks konfiguriert sind.
-    Diese Kanäle haben keine Entsprechung in vito.xml -- ohne das hier würden sie zwar
-    per MQTT ankommen (uvr/<kanal>), aber nie automatisch als Home-Assistant-Entity auftauchen.
+    Published Discovery für die CAN-Seite, unter einem eigenen Gerät "UVR16x2 (CAN)",
+    getrennt vom Vitogas/vcontrold-Gerät:
+
+      - Custom CAN-Variablen aus config/can_variables.json: komplett unabhängig von
+        vito.xml, als Number/Select-Entity mit command_topic -> Home Assistant kann sie
+        direkt lesen UND schreiben, der Wert geht per CAN direkt an die UVR.
+      - Alle übrigen CAN-Empfangs-Kanäle (rx_analog_blocks/rx_digital_blocks) als reine
+        Sensoren -- diese haben keine Entsprechung in vito.xml und würden sonst nie
+        automatisch als Home-Assistant-Entity auftauchen.
     """
+    can_variables = can_variables or {}
+    published = set()
+
+    for key, entry in can_variables.items():
+        if not isinstance(entry, dict):
+            continue  # z.B. "_hinweis"-Dokumentationseintrag
+        discovery_opts = entry.get("discovery")
+        if not discovery_opts:
+            continue
+        component, config = build_writable_config(
+            key,
+            state_topic=f"{topic_uvr}/{key}",
+            command_topic=f"{topic_cmd_uvr}/{key}",
+            discovery_opts=discovery_opts,
+            device=CAN_DEVICE_INFO,
+            id_prefix="vcontrold_uvr",
+        )
+        topic = f"{discovery_prefix}/{component}/{_unique_id(key, 'vcontrold_uvr')}/config"
+        client.publish(topic, json.dumps(config), retain=True)
+        published.add(key)
+
     names = _rx_channel_names(can_mapping.get("rx_analog_blocks", []))
     names |= _rx_channel_names(can_mapping.get("rx_digital_blocks", []))
 
-    for name in names:
+    for name in names - published:
         config = build_sensor_config(
             name, state_topic=f"{topic_uvr}/{name}", device=CAN_DEVICE_INFO, id_prefix="vcontrold_uvr"
         )

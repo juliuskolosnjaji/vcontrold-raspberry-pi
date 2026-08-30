@@ -96,12 +96,14 @@ echo "==> Lege Config-Dateien aus Vorlagen an (falls nicht vorhanden)"
 [[ -f "${INSTALL_DIR}/config/command_map.json" ]] || cp "${INSTALL_DIR}/config/command_map.json.example" "${INSTALL_DIR}/config/command_map.json"
 [[ -f "${INSTALL_DIR}/config/read_cycles.json" ]] || cp "${INSTALL_DIR}/config/read_cycles.json.example" "${INSTALL_DIR}/config/read_cycles.json"
 [[ -f "${INSTALL_DIR}/config/can_mapping.json" ]] || cp "${INSTALL_DIR}/config/can_mapping.json.example" "${INSTALL_DIR}/config/can_mapping.json"
+[[ -f "${INSTALL_DIR}/config/can_variables.json" ]] || cp "${INSTALL_DIR}/config/can_variables.json.example" "${INSTALL_DIR}/config/can_variables.json"
 [[ -f "${INSTALL_DIR}/ui/ui.env" ]] || cp "${INSTALL_DIR}/ui/ui.env.example" "${INSTALL_DIR}/ui/ui.env"
 chown "${REAL_USER}:${REAL_USER}" \
   "${INSTALL_DIR}/config/mqtt.env" \
   "${INSTALL_DIR}/config/command_map.json" \
   "${INSTALL_DIR}/config/read_cycles.json" \
   "${INSTALL_DIR}/config/can_mapping.json" \
+  "${INSTALL_DIR}/config/can_variables.json" \
   "${INSTALL_DIR}/ui/ui.env"
 
 # ---------------------------------------------------------------------------

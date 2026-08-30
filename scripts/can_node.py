@@ -9,6 +9,9 @@ Aufgaben (siehe README Abschnitt 3):
     dekodiert sie und published die Werte sowohl direkt für Home Assistant
     (MQTT_TOPIC_UVR) als auch als "on demand set"-Anfrage für den Orchestrator,
     falls der Kanal als beschreibbar gemappt ist.
+  - Custom CAN-Variablen (config/can_variables.json): komplett unabhängig von
+    vcontrold/vito.xml. Home Assistant kann sie direkt per MQTT (MQTT_TOPIC_CMD_UVR)
+    setzen, der Wert geht direkt per CAN an die UVR -- die Vitotronic ist nicht beteiligt.
 
 Läuft als eigener systemd-Dienst (can-node.service), getrennt vom Orchestrator,
 damit ein Fehler in der CAN-Dekodierung nicht die Vcontrold-Zyklen/MQTT-Befehle
@@ -29,7 +32,9 @@ import ta_can_protocol as proto
 from mqtt_common import make_client
 
 CAN_INTERFACE = "can0"
-CAN_MAPPING_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "can_mapping.json"
+CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
+CAN_MAPPING_PATH = CONFIG_DIR / "can_mapping.json"
+CAN_VARIABLES_PATH = CONFIG_DIR / "can_variables.json"
 
 # Interne MQTT-Topics (Glue zwischen Orchestrator und CAN-Node, gleicher Broker)
 TOPIC_TX_VALUE = "internal/can/tx"          # Orchestrator -> CAN-Node: aktueller Wert für einen tx-Kanal
@@ -69,6 +74,30 @@ def load_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
+def load_can_variables() -> dict:
+    if not CAN_VARIABLES_PATH.exists():
+        return {}
+    return {k: v for k, v in json.loads(CAN_VARIABLES_PATH.read_text()).items() if isinstance(v, dict)}
+
+
+def resolve_numeric_value(can_variables: dict, channel: str, payload: str) -> float | None:
+    """Wandelt eine eingehende MQTT-Payload in einen numerischen CAN-Wert um. Bei einer
+    'select'-Variable wird die Option in ihren Index übersetzt (0, 1, 2, ...), da CAN
+    nur numerische Werte kennt."""
+    discovery_opts = can_variables.get(channel, {}).get("discovery", {})
+    if discovery_opts.get("component") == "select":
+        options = discovery_opts.get("options", [])
+        if payload in options:
+            return float(options.index(payload))
+        print(f"Unbekannte Option '{payload}' für '{channel}' (erwartet: {options})", file=sys.stderr)
+        return None
+    try:
+        return float(payload)
+    except ValueError:
+        print(f"Ungültiger Wert für {channel}: {payload!r}", file=sys.stderr)
+        return None
+
+
 def configure_interface(interface: str, bitrate: int) -> None:
     """Setzt die konfigurierte Bitrate, unabhängig davon, was can0-up.service schon gesetzt hat."""
     subprocess.run(["ip", "link", "set", interface, "down"], check=False)
@@ -83,8 +112,10 @@ def configure_interface(interface: str, bitrate: int) -> None:
 
 def main() -> None:
     mapping = load_mapping()
+    can_variables = load_can_variables()
     client, env = make_client("can-node")
     uvr_topic_prefix = env.get("MQTT_TOPIC_UVR", "uvr")
+    uvr_cmd_topic_prefix = env.get("MQTT_TOPIC_CMD_UVR", "uvr/cmd")
     discovery_enabled = env.get("MQTT_DISCOVERY_ENABLED", "true").lower() not in ("false", "0", "no")
     discovery_prefix = env.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
 
@@ -124,24 +155,32 @@ def main() -> None:
 
     def on_connect(mqtt_client, userdata, flags, rc):
         mqtt_client.subscribe(f"{TOPIC_TX_VALUE}/#")
-        print(f"Abonniert: {TOPIC_TX_VALUE}/#")
+        mqtt_client.subscribe(f"{uvr_cmd_topic_prefix}/#")
+        print(f"Abonniert: {TOPIC_TX_VALUE}/# und {uvr_cmd_topic_prefix}/#")
         if discovery_enabled:
-            ha_discovery.publish_can_discovery(mqtt_client, discovery_prefix, mapping, uvr_topic_prefix)
+            ha_discovery.publish_can_discovery(
+                mqtt_client, discovery_prefix, mapping, uvr_topic_prefix, uvr_cmd_topic_prefix, can_variables
+            )
             print(f"CAN-MQTT-Discovery published (Prefix: {discovery_prefix})")
 
     def on_message(mqtt_client, userdata, msg):
         channel = msg.topic.rsplit("/", 1)[-1]
-        try:
-            tx_values[channel] = float(msg.payload.decode())
-        except ValueError:
-            print(f"Ungültiger Wert für {channel}: {msg.payload!r}", file=sys.stderr)
+        payload = msg.payload.decode()
+        value = resolve_numeric_value(can_variables, channel, payload)
+        if value is None:
             return
+        tx_values[channel] = value
+        if msg.topic.startswith(uvr_cmd_topic_prefix):
+            # Custom CAN-Variable (uvr/cmd/<name>): sofortiges optimistisches Echo auf den
+            # State-Topic, statt auf eine CAN-Antwort der UVR zu warten.
+            mqtt_client.publish(f"{uvr_topic_prefix}/{channel}", payload, retain=True)
         send_tx_analog_blocks()
         send_tx_digital_blocks()
 
     client.on_connect = on_connect
     client.on_message = on_message
     client.subscribe(f"{TOPIC_TX_VALUE}/#")
+    client.subscribe(f"{uvr_cmd_topic_prefix}/#")
     client.loop_start()
 
     print(f"Höre auf {CAN_INTERFACE} für UVR-Netzwerkausgänge ...")

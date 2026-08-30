@@ -195,6 +195,41 @@ sudo systemctl start can-node
 sudo systemctl status can-node
 ```
 
+### 3.2 Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)
+
+Alle bisherigen CAN-Kanäle sind entweder Vitotronic-Werte (Pi → UVR, Namen aus `vito.xml`) oder
+reine Anzeigewerte von der UVR (UVR → Pi). Für einen Wert, den Home Assistant direkt **lesen und
+schreiben** soll — ohne dass die Vitotronic überhaupt beteiligt ist (z.B. ein manueller Override,
+den die UVR-Programmierung selbst auswertet) — gibt es `config/can_variables.json`:
+
+```bash
+cp config/can_variables.json.example config/can_variables.json
+nano config/can_variables.json
+```
+
+```json
+{
+  "uvr_sollwert_kollektor": {
+    "discovery": {"component": "number", "unit": "°C", "min": 0, "max": 100, "step": 0.5}
+  },
+  "uvr_pumpe_override": {
+    "discovery": {"component": "select", "options": ["AUTO", "AN", "AUS"]}
+  }
+}
+```
+
+Jede hier eingetragene Variable bekommt automatisch eine **schreibbare** Home-Assistant-Entity
+(Number oder Select) unter dem Gerät "UVR16x2 (CAN)", mit `command_topic` auf
+`uvr/cmd/<name>` (Präfix aus `MQTT_TOPIC_CMD_UVR` in `config/mqtt.env`). `can_node.py` nimmt
+Werte auf diesem Topic entgegen, sendet sie direkt per CAN und spiegelt sie optimistisch auf
+`uvr/<name>` zurück, damit die HA-Oberfläche sofort reagiert. Bei einer `select`-Variable wird
+die gewählte Option in ihren Index (0, 1, 2, …) übersetzt, da CAN nur numerische Werte kennt —
+die UVR-Programmierung muss diesen Index entsprechend auswerten.
+
+Damit der Wert tatsächlich über CAN läuft, den **gleichen Namen** zusätzlich als Kanal in einem
+Write-Slot (und optional einem Read-Slot, falls die UVR den Wert bestätigend zurücksendet) in
+den CAN-Einstellungen der Web-UI eintragen — siehe Abschnitt 6.
+
 ## 4. Home Assistant einbinden
 
 **Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch
