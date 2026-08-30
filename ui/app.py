@@ -24,6 +24,7 @@ import can_sniffer
 import diagnostics
 import ta_can_protocol as proto
 import vclient_wrapper
+import vito_variables
 import xml_parser
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -449,10 +450,14 @@ def can_settings():
 
     available_subtopics = set()
     for cycle in load_read_cycles().values():
-        available_subtopics.update(cycle.get("commands", {}).values())
+        available_subtopics.update(cycle.get("variables", []))
 
     command_map_path = PROJECT_ROOT / "config" / "command_map.json"
-    available_set_keys = sorted(json.loads(command_map_path.read_text()).keys()) if command_map_path.exists() else []
+    available_set_keys = (
+        sorted(k for k, v in json.loads(command_map_path.read_text()).items() if isinstance(v, dict))
+        if command_map_path.exists()
+        else []
+    )
 
     return render_template(
         "can_settings.html",
@@ -468,7 +473,8 @@ def can_settings():
 
 
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
-CYCLE_ROWS = 4  # Anzahl editierbarer Zyklus-Zeilen (letzte leere Zeile = "neu hinzufügen")
+COMMAND_MAP_PATH_UI = PROJECT_ROOT / "config" / "command_map.json"
+CYCLE_COUNT = 4  # feste Anzahl konfigurierbarer Zyklen
 
 
 def load_read_cycles() -> dict:
@@ -477,78 +483,141 @@ def load_read_cycles() -> dict:
     return json.loads(READ_CYCLES_PATH.read_text())
 
 
-def commands_to_text(commands: dict) -> str:
-    return "\n".join(f"{cmd}={topic}" for cmd, topic in commands.items())
+def load_command_map_ui() -> dict:
+    if not COMMAND_MAP_PATH_UI.exists():
+        return {}
+    return {k: v for k, v in json.loads(COMMAND_MAP_PATH_UI.read_text()).items() if isinstance(v, dict)}
 
 
-def parse_commands_text(text: str) -> dict:
-    result = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        cmd, topic = line.split("=", 1)
-        cmd, topic = cmd.strip(), topic.strip()
-        if cmd and topic:
-            result[cmd] = topic
-    return result
-
-
-@app.route("/read-cycles-settings", methods=["GET", "POST"])
-def read_cycles_settings():
+@app.route("/variables", methods=["GET", "POST"])
+def variables_page():
     message = None
     message_ok = None
+    cfg = get_ui_config()
+    variables = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
     cycles = load_read_cycles()
+    command_map = load_command_map_ui()
+
+    # Bestehende Zyklen auf die 4 festen Slots abbilden (Reihenfolge = Einfüge-Reihenfolge in der JSON)
+    cycle_names = list(cycles.keys())
 
     if request.method == "POST":
-        new_cycles = {}
         errors = []
-        for i in range(CYCLE_ROWS):
+
+        cycle_defs = []
+        for i in range(CYCLE_COUNT):
             name = request.form.get(f"cycle_name_{i}", "").strip()
+            interval_raw = request.form.get(f"cycle_interval_{i}", "").strip()
             if not name:
+                cycle_defs.append(None)
                 continue
             try:
-                interval = int(request.form.get(f"cycle_interval_{i}", "0"))
+                interval = int(interval_raw)
                 if interval <= 0:
                     raise ValueError
             except ValueError:
-                errors.append(f"Zyklus '{name}': ungültiges Intervall")
+                errors.append(f"Zyklus {i + 1} ('{name}'): ungültiges Intervall")
+                cycle_defs.append(None)
                 continue
-            commands = parse_commands_text(request.form.get(f"cycle_commands_{i}", ""))
-            if not commands:
-                errors.append(f"Zyklus '{name}': keine gültigen Kommandos (Format: getXXX=subtopic)")
+            cycle_defs.append({"name": name, "interval_seconds": interval, "variables": []})
+
+        new_command_map = {}
+        for var_name, cmds in variables.items():
+            cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
+            if cycle_choice:
+                idx = int(cycle_choice)
+                if cycle_defs[idx] is None:
+                    errors.append(f"'{var_name}': Zyklus {idx + 1} ist nicht definiert")
+                else:
+                    cycle_defs[idx]["variables"].append(var_name)
+
+            if not cmds.get("set"):
+                continue  # ohne Setter in vito.xml kann diese Variable nicht settable sein
+            if request.form.get(f"var_settable_{var_name}") != "1":
                 continue
-            new_cycles[name] = {"interval_seconds": interval, "commands": commands}
+
+            entry = {}
+            component = request.form.get(f"var_component_{var_name}", "number")
+            discovery = {"component": component}
+            if component == "number":
+                unit = request.form.get(f"var_unit_{var_name}", "").strip()
+                if unit:
+                    discovery["unit"] = unit
+                for field in ("min", "max", "step"):
+                    raw = request.form.get(f"var_{field}_{var_name}", "").strip()
+                    if raw:
+                        try:
+                            discovery[field] = float(raw) if "." in raw else int(raw)
+                        except ValueError:
+                            errors.append(f"'{var_name}': ungültiger Wert für {field}")
+            elif component == "select":
+                options_raw = request.form.get(f"var_options_{var_name}", "").strip()
+                discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
+            entry["discovery"] = discovery
+            new_command_map[var_name] = entry
 
         if errors:
             message, message_ok = " / ".join(errors), False
         else:
+            new_cycles = {c["name"]: {"interval_seconds": c["interval_seconds"], "variables": c["variables"]}
+                          for c in cycle_defs if c is not None}
             READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
             READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            COMMAND_MAP_PATH_UI.write_text(json.dumps(new_command_map, indent=2, ensure_ascii=False) + "\n")
             cycles = new_cycles
+            command_map = new_command_map
+            cycle_names = list(cycles.keys())
 
-            status = diagnostics.service_status("orchestrator")
-            if status["state"] == "active":
-                restart = diagnostics.restart_service("orchestrator")
-                if restart["ok"]:
-                    message, message_ok = "Gespeichert, orchestrator neu gestartet.", True
-                else:
-                    message, message_ok = f"Gespeichert, aber Neustart fehlgeschlagen: {restart['detail']}", False
-            else:
-                message, message_ok = "Gespeichert. orchestrator läuft nicht, wurde nicht neu gestartet.", True
+            restarted = []
+            for service in ("orchestrator",):
+                status = diagnostics.service_status(service)
+                if status["state"] == "active":
+                    result = diagnostics.restart_service(service)
+                    if result["ok"]:
+                        restarted.append(service)
+            message = "Gespeichert." + (f" Neu gestartet: {', '.join(restarted)}." if restarted else "")
+            message_ok = True
 
-    rows = [
-        {"name": name, "interval_seconds": cycle["interval_seconds"], "commands_text": commands_to_text(cycle["commands"])}
-        for name, cycle in cycles.items()
-    ]
-    while len(rows) < CYCLE_ROWS:
-        rows.append({"name": "", "interval_seconds": 30, "commands_text": ""})
-    rows = rows[:CYCLE_ROWS] if len(rows) > CYCLE_ROWS else rows
+    # Zyklus-Zuordnung pro Variable ermitteln (welcher Index in cycle_names, falls überhaupt)
+    variable_cycle_index = {}
+    for idx, cname in enumerate(cycle_names):
+        for var_name in cycles[cname].get("variables", []):
+            variable_cycle_index[var_name] = idx
+
+    rows = []
+    for var_name, cmds in variables.items():
+        entry = command_map.get(var_name, {})
+        discovery = entry.get("discovery", {})
+        rows.append(
+            {
+                "name": var_name,
+                "friendly_name": vito_variables.friendly_name(var_name),
+                "get": cmds.get("get"),
+                "set": cmds.get("set"),
+                "cycle_index": variable_cycle_index.get(var_name),
+                "settable": var_name in command_map,
+                "component": discovery.get("component", "number"),
+                "unit": discovery.get("unit", ""),
+                "min": discovery.get("min", ""),
+                "max": discovery.get("max", ""),
+                "step": discovery.get("step", ""),
+                "options": ", ".join(discovery.get("options", [])),
+            }
+        )
+
+    cycle_rows = []
+    for i in range(CYCLE_COUNT):
+        if i < len(cycle_names):
+            cycle_rows.append({"name": cycle_names[i], "interval_seconds": cycles[cycle_names[i]]["interval_seconds"]})
+        else:
+            cycle_rows.append({"name": "", "interval_seconds": 30})
 
     return render_template(
-        "read_cycles_settings.html",
+        "variables.html",
+        cycle_rows=cycle_rows,
+        num_cycles=range(CYCLE_COUNT),
         rows=rows,
-        num_rows=range(CYCLE_ROWS),
+        device_xml=cfg["device_xml"],
         message=message,
         message_ok=message_ok,
     )

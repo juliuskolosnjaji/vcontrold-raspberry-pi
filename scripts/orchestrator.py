@@ -30,6 +30,7 @@ import sys
 import time
 
 import ha_discovery
+import vito_variables
 from mqtt_common import make_client
 
 VCLIENT_HOST = "localhost"
@@ -71,8 +72,9 @@ class Orchestrator:
             READ_CYCLES_PATH, "Kopiere config/read_cycles.json.example dorthin und passe die Zyklen an."
         )
         self.command_map = load_json(
-            COMMAND_MAP_PATH, "Kopiere config/command_map.json.example dorthin und trage echte Setter/Getter ein."
+            COMMAND_MAP_PATH, "Kopiere config/command_map.json.example dorthin und lege settable Variablen fest."
         )
+        self.variables = vito_variables.load_variables()
         self.client, env = make_client("orchestrator")
         self.topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
         self.topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
@@ -105,19 +107,24 @@ class Orchestrator:
         self.handle_set_request(key, payload, source)
 
     def handle_set_request(self, key: str, payload: str, source: str) -> None:
-        mapping = self.command_map.get(key)
-        if mapping is None:
-            print(f"Kein Mapping für Set-Anfrage '{key}' (Quelle: {source})", file=sys.stderr)
+        if key not in self.command_map:
+            print(f"'{key}' ist nicht als settable freigegeben (fehlt in command_map.json), Quelle: {source}", file=sys.stderr)
             return
 
-        set_result = run_vclient(f"{mapping['set']} {payload}")
+        variable = self.variables.get(key)
+        if variable is None or not variable.get("set"):
+            print(f"Keine Setter-Definition für '{key}' in vito.xml gefunden (Quelle: {source})", file=sys.stderr)
+            return
+
+        set_result = run_vclient(f"{variable['set']} {payload}")
         if set_result is None:
             print(f"Set fehlgeschlagen: {key}={payload} (Quelle: {source})", file=sys.stderr)
             return
 
         # Verifikation: nach dem Set den Ist-Zustand per Get nachfragen, statt
         # dem Set-Rückgabewert blind zu vertrauen.
-        verified_value = run_vclient(mapping["get"])
+        get_command = variable.get("get")
+        verified_value = run_vclient(get_command) if get_command else set_result
         if verified_value is None:
             print(f"Set '{key}' ausgeführt, Verifikation fehlgeschlagen (Quelle: {source})", file=sys.stderr)
             return
@@ -136,11 +143,15 @@ class Orchestrator:
             if now < self.next_due[name]:
                 continue
             self.next_due[name] = now + cycle["interval_seconds"]
-            for command, subtopic in cycle["commands"].items():
-                value = run_vclient(command)
+            for var_name in cycle["variables"]:
+                variable = self.variables.get(var_name)
+                if variable is None or not variable.get("get"):
+                    print(f"Keine Getter-Definition für '{var_name}' in vito.xml gefunden", file=sys.stderr)
+                    continue
+                value = run_vclient(variable["get"])
                 if value is None:
                     continue
-                self.publish_value(subtopic, value)
+                self.publish_value(var_name, value)
 
     def run_forever(self) -> None:
         self.client.loop_start()

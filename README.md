@@ -109,22 +109,34 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 
 `scripts/orchestrator.py` läuft dauerhaft als systemd-Dienst und übernimmt drei Aufgaben:
 
-1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<subtopic>` published (für Home Assistant) UND auf `internal/can/tx/<subtopic>` (damit `can_node.py` denselben Stand an die UVR weiterreicht).
-2. **On-demand Set-Befehle**, sowohl von Home Assistant (`heizung/cmd/<key>`) als auch von der UVR selbst (`can_node.py` leitet CAN-seitige Set-Anfragen über `internal/can/rx_set/<key>` weiter).
+1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<Variable>` published (für Home Assistant) UND auf `internal/can/tx/<Variable>` (damit `can_node.py` denselben Stand an die UVR weiterreicht).
+2. **On-demand Set-Befehle**, sowohl von Home Assistant (`heizung/cmd/<Variable>`) als auch von der UVR selbst (`can_node.py` leitet CAN-seitige Set-Anfragen über `internal/can/rx_set/<Variable>` weiter).
 3. **Verifikation:** nach jedem Set-Befehl wird automatisch der zugehörige Get-Befehl nachgeschickt, und erst der so bestätigte Ist-Wert wird published — nicht der ungeprüfte Set-Rückgabewert.
 
-Konfiguration:
+**Kanonische Namen statt eigener MQTT-Bezeichner:** Es gibt keine separate Umbenennungsebene mehr —
+`scripts/vito_variables.py` liest `/etc/vcontrold/vito.xml` und fasst jedes Getter/Setter-Paar
+(`getTempAist`/`setTempAist`) zu einer Variable `TempAist` zusammen. Dieser exakte Name (Groß-/
+Kleinschreibung wie in vito.xml) ist gleichzeitig der MQTT-Subtopic-Name **und** der CAN-Kanalname
+in `config/can_mapping.json` — keine zwei verschiedenen Bezeichner für dieselbe Sache mehr zu pflegen.
+
+Konfiguration am einfachsten über die Web-UI unter **Variablen** (siehe Abschnitt 5) — dort siehst du
+alle aus `vito.xml` extrahierten Variablen in einer Tabelle, ordnest jeder einen Zyklus zu und
+legst fest, welche per MQTT/CAN setzbar sein sollen (inkl. Home-Assistant-Discovery-Metadaten).
+Manuell geht es auch:
 
 ```bash
 cp config/mqtt.env.example config/mqtt.env
 nano config/mqtt.env       # Broker-Host = deine Home-Assistant-IP
 cp config/read_cycles.json.example config/read_cycles.json
-nano config/read_cycles.json   # Zyklen/Intervalle nach Bedarf anpassen
+nano config/read_cycles.json   # {"zyklus_name": {"interval_seconds": N, "variables": ["TempAist", ...]}}
 cp config/command_map.json.example config/command_map.json
-nano config/command_map.json   # {"key": {"set": "...", "get": "..."}} pro Set-fähigem Datenpunkt
+nano config/command_map.json   # {"TempRaumNorSoll": {"discovery": {...}}} pro settable Variable
 ```
 
-`command_map.json` verknüpft einen MQTT-Schlüssel mit dem passenden `vclient`-Set- **und** Get-Kommando (für die Verifikation), z.B. Topic `heizung/cmd/solltemperatur_normal` mit Payload `21.5` → `vclient -c "setTempRaumNorSoll 21.5"`, danach automatisch `vclient -c "getTempRaumNorSoll"` zur Bestätigung.
+`command_map.json` ist eine **Freigabeliste**: nur Variablen, die dort eingetragen sind, lassen sich
+per MQTT/CAN setzen — auch wenn `vito.xml` einen Setter dafür hat. Die `set`/`get`-Kommandos selbst
+werden automatisch aus `vito.xml` aufgelöst, in `command_map.json` stehen nur noch optionale
+Discovery-Metadaten für Home Assistant (Einheit, Min/Max/Step, oder Auswahloptionen bei einem Select).
 
 Von `install.sh` bereits installiert, aber bewusst nicht automatisch gestartet (erst nach Konfiguration):
 
@@ -210,8 +222,8 @@ Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 - **Config-Import**: Geräte-XML hochladen, Backup der bisherigen `/etc/vcontrold.xml` wird automatisch angelegt, danach `systemctl restart vcontrold`.
 - **Config-Editor**: `vcontrold.xml` und `vito.xml` direkt als Text im Browser bearbeiten (z.B. um schnell einen neuen Getter/Setter hinzuzufügen), statt eine Datei hochzuladen. Validiert XML vor dem Speichern, legt Backups an, startet `vcontrold` neu.
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
-- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, und pro Block CAN-ID, Wertgröße (2 oder 4 Byte) und welche Kanäle auf welchem Slot liegen, für Senden und Empfangen getrennt. Speichern startet `can-node` (falls aktiv) automatisch neu.
-- **Read-Zyklen**: `config/read_cycles.json` im Browser bearbeiten — Name, Intervall und Kommando-Liste pro Zyklus, ohne JSON von Hand zu editieren. Speichern startet `orchestrator` (falls aktiv) automatisch neu.
+- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, und je Spalte (Senden/Empfangen × Analog/Digital) 16 Slots, jeder per Dropdown mit einer vito.xml-Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
+- **Variablen**: die zentrale Seite — zeigt alle aus `vito.xml` extrahierten Getter/Setter als Tabelle. Pro Variable per Dropdown einem Zyklus zuordnen (ersetzt manuelles Editieren von `config/read_cycles.json`) und per Checkbox festlegen, ob sie per MQTT/CAN setzbar sein soll, inkl. Home-Assistant-Discovery-Metadaten (Einheit, Min/Max/Step oder Auswahloptionen). Ersetzt manuelles Editieren von `config/command_map.json`. Speichern startet `orchestrator` (falls aktiv) automatisch neu.
 - **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 

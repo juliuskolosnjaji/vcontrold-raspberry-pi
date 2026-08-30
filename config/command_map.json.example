@@ -1,26 +1,20 @@
 {
-  "solltemperatur_normal": {
-    "set": "setTempRaumNorSoll",
-    "get": "getTempRaumNorSoll",
+  "_hinweis": "Freigabeliste: nur Variablen, die hier eingetragen sind, können per MQTT/CAN gesetzt werden -- auch wenn vito.xml einen Setter dafür hat. set/get-Kommandos werden automatisch aus vito.xml aufgelöst, hier nur noch optionale Discovery-Metadaten für Home Assistant.",
+
+  "TempRaumNorSoll": {
     "discovery": {"component": "number", "unit": "°C", "min": 10, "max": 28, "step": 0.5}
   },
-  "solltemperatur_reduziert": {
-    "set": "setTempRaumRedSoll",
-    "get": "getTempRaumRedSoll",
+  "TempRaumRedSoll": {
     "discovery": {"component": "number", "unit": "°C", "min": 5, "max": 24, "step": 0.5}
   },
-  "solltemperatur_party": {
-    "set": "setTempRaumPartySoll",
-    "get": "getTempRaumPartySoll",
+  "TempRaumPartySoll": {
     "discovery": {"component": "number", "unit": "°C", "min": 10, "max": 28, "step": 0.5}
   },
-  "betriebsart": {
-    "set": "setBetriebsart",
-    "get": "getBetriebsart",
+  "Betriebsart": {
     "discovery": {"component": "select", "options": ["WW", "RED", "NORM", "H+WW", "ABSCHALT"]}
   },
-  "betriebsart_spar": {"set": "setBetriebSpar", "get": "getBetriebSpar"},
-  "betriebsart_party": {"set": "setBetriebParty", "get": "getBetriebParty"},
-  "neigung_heizkennlinie": {"set": "setNeigung", "get": "getNeigung"},
-  "niveau_heizkennlinie": {"set": "setNiveau", "get": "getNiveau"}
+  "BetriebSpar": {},
+  "BetriebParty": {},
+  "Neigung": {},
+  "Niveau": {}
 }

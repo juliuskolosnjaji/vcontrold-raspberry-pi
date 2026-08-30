@@ -14,6 +14,8 @@ Subtopics bekommen trotzdem eine Sensor-Entity, nur ohne Einheit/Icon.
 """
 import json
 
+import vito_variables
+
 DEVICE_INFO = {
     "identifiers": ["vcontrold_raspberry_pi"],
     "name": "Vitogas 100 (vcontrold)",
@@ -21,21 +23,21 @@ DEVICE_INFO = {
     "model": "Vitotronic V200KW1",
 }
 
-# subtopic -> {unit_of_measurement, device_class} für hübschere Sensor-Darstellung.
+# Kanonischer vito.xml-Variablenname -> {unit_of_measurement, device_class} für hübschere Sensoren.
 SENSOR_METADATA = {
-    "aussentemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "kesseltemperatur_ist": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "kesseltemperatur_soll": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "warmwassertemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "vorlauftemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "ruecklauftemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "brennerstunden_stufe1": {"unit_of_measurement": "h"},
-    "brennerstunden_stufe2": {"unit_of_measurement": "h"},
+    "TempAist": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempKist": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempKsoll": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempWWist": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempVList": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempRList": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "BrennerStunden1": {"unit_of_measurement": "h"},
+    "BrennerStunden2": {"unit_of_measurement": "h"},
 }
 
 
 def _friendly_name(key: str) -> str:
-    return key.replace("_", " ").strip().capitalize()
+    return vito_variables.friendly_name(key)
 
 
 def _unique_id(key: str) -> str:
@@ -82,16 +84,18 @@ def publish_discovery(
     topic_heizung: str,
     topic_cmd_heizung: str,
 ) -> None:
-    # Alle Subtopics aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
+    # Alle Variablen aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
     all_subtopics = set()
     for cycle in read_cycles.values():
-        all_subtopics.update(cycle.get("commands", {}).values())
+        all_subtopics.update(cycle.get("variables", []))
 
     published = set()
 
     # Schreibbare Datenpunkte mit expliziter Discovery-Konfiguration zuerst (number/select),
     # damit sie nicht zusätzlich als reiner Sensor doppelt angelegt werden.
     for key, mapping in command_map.items():
+        if not isinstance(mapping, dict):
+            continue  # z.B. "_hinweis"-Dokumentationseintrag
         discovery_opts = mapping.get("discovery")
         if not discovery_opts:
             continue
