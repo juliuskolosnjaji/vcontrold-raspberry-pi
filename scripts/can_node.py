@@ -164,13 +164,25 @@ def main() -> None:
         int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", []) if b.get("active", True)
     }
 
+    def safe_send(message: can.Message) -> None:
+        """Sendet mit Timeout statt unbegrenzt zu blockieren -- ohne Timeout kann ein
+        blockierendes bus.send() (z.B. bei Bus-Off/Error-Passive, kein ACK, TX-Puffer voll)
+        den MQTT-Netzwerk-Thread (der on_message synchron ausführt) für immer einfrieren:
+        alle künftigen tx-Werte kommen dann nie mehr an, während die separate Lese-Schleife
+        (eigener Thread) unbeeinflusst weiterläuft -- genau das durch Logs beobachtete
+        Symptom ("Unbekannter Frame" läuft weiter, TA-Netzwerkausgang-Zeilen frieren ein)."""
+        try:
+            bus.send(message, timeout=1.0)
+        except can.CanError as exc:
+            print(f"CAN-Sendefehler (id=0x{message.arbitration_id:x}): {exc}", file=sys.stderr)
+
     def send_tx_analog_blocks():
         for block in mapping.get("tx_analog_blocks", []):
             if not block.get("active", True):
                 continue
             values = [tx_values.get(ch) for ch in block["channels"]]
             data = proto.encode_analog_block(values, value_bytes=block.get("value_bytes", 2))
-            bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
+            safe_send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
     def send_tx_digital_blocks():
         for block in mapping.get("tx_digital_blocks", []):
@@ -178,7 +190,7 @@ def main() -> None:
                 continue
             values = [bool(tx_values.get(ch)) if ch else None for ch in block["channels"]]
             data = proto.encode_digital_block(values)
-            bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
+            safe_send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
     ta_outputs = mapping.get("ta_network_outputs")
 
@@ -195,7 +207,7 @@ def main() -> None:
                 continue
             data = ta.encode_analog_outputs(values)
             cob_id = ta.ANALOG_OUTPUT_COB_ID_BASES[block_index] | own_node_id
-            bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+            safe_send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
             print(f"TA-Netzwerkausgang analog Block {block_index + 1}: {list(zip(channels, values))} "
                   f"-> COB-ID 0x{cob_id:x} data={data.hex()}")
         digital_channels = (ta_outputs.get("digital", []) + [None] * 16)[:16]
@@ -203,7 +215,7 @@ def main() -> None:
             values = [bool(tx_values.get(ch)) if ch else None for ch in digital_channels]
             data = ta.encode_digital_outputs(values)
             cob_id = ta.DIGITAL_OUTPUT_COB_ID_BASE | own_node_id
-            bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+            safe_send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
             print(f"TA-Netzwerkausgang digital: {list(zip(digital_channels, values))} "
                   f"-> COB-ID 0x{cob_id:x} data={data.hex()}")
 
