@@ -34,6 +34,7 @@ CAN_MAPPING_PATH = PROJECT_ROOT / "config" / "can_mapping.json"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
+app.config["TEMPLATES_AUTO_RELOAD"] = True  # Templates immer frisch von der Platte lesen
 
 
 def load_env(path: pathlib.Path) -> dict:

@@ -57,21 +57,21 @@
         <td>
           <input type="checkbox" class="settable-toggle" name="var_settable_{{ row.name }}" value="1" {% if row.settable %}checked{% endif %}>
         </td>
-        <td class="discovery-field">
+        <td class="discovery-field" {% if not row.settable %}style="display:none"{% endif %}>
           <select name="var_component_{{ row.name }}">
             <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
             <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
           </select>
         </td>
-        <td class="discovery-field discovery-number">
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component == "select" %}style="display:none"{% endif %}>
           <input type="text" name="var_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C">
         </td>
-        <td class="discovery-field discovery-number">
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component == "select" %}style="display:none"{% endif %}>
           <input type="text" name="var_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min">
           <input type="text" name="var_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max">
           <input type="text" name="var_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step">
         </td>
-        <td class="discovery-field discovery-select">
+        <td class="discovery-field discovery-select" {% if not row.settable or row.component != "select" %}style="display:none"{% endif %}>
           <input type="text" name="var_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ...">
         </td>
         {% else %}
@@ -102,7 +102,6 @@
   .variables-table input, .variables-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
   .variables-table td input[type=text] { min-width: 70px; }
   .no-set-cell { color: #888; font-style: italic; }
-  .discovery-field { display: none; }
 </style>
 
 <script>
