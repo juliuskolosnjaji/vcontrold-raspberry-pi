@@ -73,8 +73,20 @@ BINARY_SENSOR_METADATA = {
 }
 
 
+_display_names_cache: dict = {}
+
+
+def reload_display_names() -> None:
+    """Config/display_names.json neu einlesen -- vor jedem publish_discovery/
+    publish_can_discovery aufgerufen, damit UI-Änderungen nach einem Neustart
+    des Diensts wirksam werden (ohne Neustart würde der alte Stand weiterlaufen,
+    genau wie bei read_cycles.json/command_map.json/can_mapping.json)."""
+    global _display_names_cache
+    _display_names_cache = vito_variables.load_display_names()
+
+
 def _friendly_name(key: str) -> str:
-    return vito_variables.friendly_name(key)
+    return _display_names_cache.get(key) or vito_variables.friendly_name(key)
 
 
 def _unique_id(key: str, id_prefix: str = "vcontrold") -> str:
@@ -160,6 +172,7 @@ def publish_discovery(
     topic_heizung: str,
     topic_cmd_heizung: str,
 ) -> None:
+    reload_display_names()
     # Alle Variablen aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
     all_subtopics = set()
     for cycle in read_cycles.values():
@@ -221,6 +234,7 @@ def publish_can_discovery(
         Sensoren -- diese haben keine Entsprechung in vito.xml und würden sonst nie
         automatisch als Home-Assistant-Entity auftauchen.
     """
+    reload_display_names()
     can_variables = can_variables or {}
     published = set()
 

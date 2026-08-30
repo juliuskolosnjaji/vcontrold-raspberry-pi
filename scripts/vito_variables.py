@@ -9,11 +9,24 @@ Umbenennungs-/Mapping-Ebene mehr. Wer "TempAist" in config/read_cycles.json eint
 bekommt automatisch heizung/TempAist als MQTT-Topic und kann denselben Namen 1:1 in
 config/can_mapping.json als CAN-Kanal verwenden.
 """
+import json
+import pathlib
 import re
 import xml.etree.ElementTree as ET
 
 DEFAULT_VITO_XML_PATH = "/etc/vcontrold/vito.xml"
 _COMMAND_NAME_PATTERN = re.compile(r"^(get|set)([A-Za-z0-9_]+)$")
+
+# Kanonischer Variablenname -> benutzerdefinierter Anzeigename für Home Assistant.
+# getTempKsoll/setTempKsoll bleiben als vclient-Kommandos unverändert, nur der in HA
+# angezeigte Name wird hier überschrieben (Standard ohne Eintrag: friendly_name()).
+DISPLAY_NAMES_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "display_names.json"
+
+
+def load_display_names(path: pathlib.Path = DISPLAY_NAMES_PATH) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
 
 
 def load_variables(path: str = DEFAULT_VITO_XML_PATH) -> dict:

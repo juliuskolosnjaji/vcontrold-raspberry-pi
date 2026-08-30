@@ -496,6 +496,7 @@ def can_settings():
 
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
 COMMAND_MAP_PATH_UI = PROJECT_ROOT / "config" / "command_map.json"
+DISPLAY_NAMES_PATH_UI = PROJECT_ROOT / "config" / "display_names.json"
 CYCLE_COUNT = 4  # feste Anzahl konfigurierbarer Zyklen
 
 
@@ -544,6 +545,7 @@ def variables_page():
             cycle_defs.append({"name": name, "interval_seconds": interval, "variables": []})
 
         new_command_map = {}
+        new_display_names = {}
         for var_name, cmds in variables.items():
             cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
             if cycle_choice:
@@ -552,6 +554,10 @@ def variables_page():
                     errors.append(f"'{var_name}': Zyklus {idx + 1} ist nicht definiert")
                 else:
                     cycle_defs[idx]["variables"].append(var_name)
+
+            display_name = request.form.get(f"var_display_name_{var_name}", "").strip()
+            if display_name:
+                new_display_names[var_name] = display_name
 
             if not cmds.get("set"):
                 continue  # ohne Setter in vito.xml kann diese Variable nicht settable sein
@@ -586,6 +592,7 @@ def variables_page():
             READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
             READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
             COMMAND_MAP_PATH_UI.write_text(json.dumps(new_command_map, indent=2, ensure_ascii=False) + "\n")
+            DISPLAY_NAMES_PATH_UI.write_text(json.dumps(new_display_names, indent=2, ensure_ascii=False) + "\n")
             cycles = new_cycles
             command_map = new_command_map
             cycle_names = list(cycles.keys())
@@ -606,6 +613,7 @@ def variables_page():
         for var_name in cycles[cname].get("variables", []):
             variable_cycle_index[var_name] = idx
 
+    display_names = vito_variables.load_display_names()
     rows = []
     for var_name, cmds in variables.items():
         entry = command_map.get(var_name, {})
@@ -614,6 +622,7 @@ def variables_page():
             {
                 "name": var_name,
                 "friendly_name": vito_variables.friendly_name(var_name),
+                "display_name": display_names.get(var_name, ""),
                 "get": cmds.get("get"),
                 "set": cmds.get("set"),
                 "cycle_index": variable_cycle_index.get(var_name),

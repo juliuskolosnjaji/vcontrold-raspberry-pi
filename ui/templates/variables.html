@@ -14,7 +14,9 @@
   <p>Alle Getter/Setter aus deiner Geräte-XML an einer Stelle: welchem Read-Zyklus eine Variable
      zugeordnet ist, und ob/wie sie per MQTT/CAN setzbar ist (Home-Assistant-Discovery-Metadaten
      inklusive). MQTT-Topic und CAN-Kanalname sind immer exakt der Variablenname hier links —
-     keine separate Umbenennung nötig.</p>
+     keine separate Umbenennung nötig. "Anzeigename in HA" ändert nur den in Home Assistant
+     angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet), <code>getTempKsoll</code>/
+     <code>setTempKsoll</code> bleiben dabei unverändert.</p>
 
   <h2>Zyklen</h2>
   <table style="max-width: 700px;">
@@ -34,6 +36,7 @@
     <table class="variables-table">
       <tr>
         <th>Variable</th>
+        <th>Anzeigename in HA</th>
         <th>Get</th>
         <th>Set</th>
         <th>Zyklus</th>
@@ -43,6 +46,9 @@
       {% for row in rows %}
       <tr class="{{ 'no-set' if not row.set }}">
         <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
+        <td>
+          <input type="text" name="var_display_name_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
+        </td>
         <td>{{ row['get'] or "—" }}</td>
         <td>{{ row.set or "—" }}</td>
         <td>
