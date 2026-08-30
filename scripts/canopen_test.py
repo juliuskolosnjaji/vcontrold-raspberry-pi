@@ -97,7 +97,7 @@ def main() -> None:
         if conn is not None:
             conn.disconnect(args.uvr_node_id, node)
         else:
-            network.remove_node(node.id)
+            network.pop(node.id)
         network.notifier.stop()
         bus.shutdown()
 

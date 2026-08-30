@@ -124,7 +124,7 @@ class TAConnection:
 
     def disconnect(self, target_node_id: int, node: canopen.RemoteNode | None = None) -> None:
         if node is not None:
-            self.network.remove_node(node.id)
+            self.network.pop(node.id)
         self._send_cob_request(target_node_id, create=False)
 
     def _send_cob_request(self, target_node_id: int, create: bool) -> None:
