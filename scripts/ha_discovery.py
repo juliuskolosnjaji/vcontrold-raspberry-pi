@@ -30,16 +30,44 @@ CAN_DEVICE_INFO = {
     "model": "UVR16x2",
 }
 
-# Kanonischer vito.xml-Variablenname -> {unit_of_measurement, device_class} für hübschere Sensoren.
+# Kanonischer vito.xml-Variablenname -> {unit_of_measurement, device_class, ...} für
+# hübschere Sensoren. Übernommen/erweitert aus einer früher funktionierenden
+# statischen configuration.yaml (anderer Pi, siehe Chat-Historie).
 SENSOR_METADATA = {
-    "TempAist": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "TempKist": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "TempKsoll": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "TempWWist": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "TempVList": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "TempRList": {"unit_of_measurement": "°C", "device_class": "temperature"},
-    "BrennerStunden1": {"unit_of_measurement": "h"},
-    "BrennerStunden2": {"unit_of_measurement": "h"},
+    "TempAist": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempKist": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempKsoll": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempWWist": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement", "icon": "mdi:shower"},
+    "TempVList": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempRList": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempATist": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempAGist": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "TempSTist": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement", "icon": "mdi:heating-coil"},
+    "TempRaumNorSoll": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempRaumRedSoll": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "TempRaumPartySoll": {"unit_of_measurement": "°C", "device_class": "temperature", "state_class": "measurement"},
+    "Neigung": {"icon": "mdi:chart-bell-curve-cumulative"},
+    "Niveau": {"icon": "mdi:ray-vertex"},
+    "Leistung": {"unit_of_measurement": "%", "icon": "mdi:fire"},
+    "Verbrauch": {"unit_of_measurement": "m³", "device_class": "gas", "state_class": "total_increasing"},
+    "BrennerStarts": {"unit_of_measurement": "x", "state_class": "total_increasing", "icon": "mdi:counter"},
+    "BrennerStunden1": {"unit_of_measurement": "h", "device_class": "duration", "state_class": "total_increasing"},
+    "BrennerStunden2": {"unit_of_measurement": "h", "device_class": "duration", "state_class": "total_increasing"},
+}
+
+# Kanonischer Name -> {device_class, ...}: als binary_sensor statt nacktem 0/1-Sensor
+# published. Rohwert von vclient ist bereits "0"/"1", passt direkt auf payload_off/on.
+BINARY_SENSOR_METADATA = {
+    "BetriebSpar": {"icon": "mdi:sprout"},
+    "BetriebParty": {"icon": "mdi:music-note"},
+    "BrennerStatus": {"device_class": "running"},
+    "PumpeStatusZirku": {"device_class": "running"},
+    "PumpeStatusHk": {"device_class": "running"},
+    "PumpeStatusSp": {"device_class": "running"},
+    "BrennerError": {"device_class": "problem"},
+    "ErrorAktiv": {"device_class": "problem"},
+    "State1": {"device_class": "running"},
+    "State2": {"device_class": "running"},
 }
 
 
@@ -59,6 +87,19 @@ def build_sensor_config(key: str, state_topic: str, device: dict = None, id_pref
         "device": device or DEVICE_INFO,
     }
     config.update(SENSOR_METADATA.get(key, {}))
+    return config
+
+
+def build_binary_sensor_config(key: str, state_topic: str, device: dict = None, id_prefix: str = "vcontrold") -> dict:
+    config = {
+        "name": _friendly_name(key),
+        "unique_id": _unique_id(key, id_prefix),
+        "state_topic": state_topic,
+        "payload_on": "1",
+        "payload_off": "0",
+        "device": device or DEVICE_INFO,
+    }
+    config.update(BINARY_SENSOR_METADATA.get(key, {}))
     return config
 
 
@@ -118,10 +159,15 @@ def publish_discovery(
         client.publish(topic, json.dumps(config), retain=True)
         published.add(key)
 
-    # Alle übrigen Read-Zyklen-Subtopics als reine Sensoren.
+    # Alle übrigen Read-Zyklen-Subtopics: bekannte Boolean-Werte als binary_sensor,
+    # sonst als reiner Sensor.
     for key in all_subtopics - published:
-        config = build_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
-        topic = f"{discovery_prefix}/sensor/{_unique_id(key)}/config"
+        if key in BINARY_SENSOR_METADATA:
+            config = build_binary_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
+            topic = f"{discovery_prefix}/binary_sensor/{_unique_id(key)}/config"
+        else:
+            config = build_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
+            topic = f"{discovery_prefix}/sensor/{_unique_id(key)}/config"
         client.publish(topic, json.dumps(config), retain=True)
 
 
