@@ -235,6 +235,42 @@ Damit der Wert tatsächlich über CAN läuft, den **gleichen Namen** zusätzlich
 Write-Slot (und optional einem Read-Slot, falls die UVR den Wert bestätigend zurücksendet) in
 den CAN-Einstellungen der Web-UI eintragen — siehe Abschnitt 6.
 
+### 3.3 CANopen/SDO — experimenteller Alternativweg (noch nicht produktiv verdrahtet)
+
+Recherche zweier Community-Quellen (Forum-Thread
+[holzheizer-forum.de/thread/61195](https://www.holzheizer-forum.de/forum/thread/61195-uvr16x2-via-can-mit-raspberry-koppeln-ohne-cmi/)
+und das reale, funktionierende Python-Projekt
+[staircaseblog/uvr16x2logging](https://github.com/staircaseblog/uvr16x2logging)) zeigt: TA-Regler
+(UVR1611, UVR16x2) sprechen auf dem CAN-Bus **Standard-CANopen-SDO**, nicht ein rein proprietäres
+Format wie in Abschnitt 3.1 angenommen. Es gibt konkrete, bekannte Objektverzeichnis-Indizes statt
+"CAN-ID + Byte-Offset per Sniffer raten".
+
+**Was das ändert:** statt CAN-IDs/Byte-Slots empirisch per Sniffer zu ermitteln (Abschnitt 3.1),
+könnten Werte direkt über feste Objektindizes gelesen werden (z.B. UVR16x2-Eingang 1 = Objekt
+`0x8272`, Subindex 1).
+
+**Was noch fehlt:** die Community warnt ausdrücklich, TA weiche in Details vom CANopen-Standard ab
+(eigener Verbindungsaufbau vor dem eigentlichen SDO-Zugriff, siehe `scripts/ta_canopen.py`
+Modul-Docstring). Das ist **gegen echte Hardware noch nicht verifiziert** — CAN-Kabel zur UVR liegt
+bislang nicht. Deshalb ersetzt dieser Weg aktuell **nicht** das produktiv laufende
+`can_node.py`/`config/can_mapping.json`-System aus 3.1, sondern steht als eigenständig testbares
+Werkzeug daneben:
+
+```bash
+sudo ip link set can0 up type can bitrate 50000
+venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 1
+```
+
+`--uvr-node-id` ist die im UVR-Menü/Handbuch eingestellte Knoten-Nummer des Reglers (nicht die
+eigene). Bei Erfolg gibt das Skript alle 16 Eingangswerte inkl. Einheit aus. Schlägt der
+Verbindungsaufbau fehl (Timeout/COB-ID 0): Bitrate, Verkabelung/Terminierung und Knoten-Nummer
+prüfen.
+
+**Sobald `canopen_test.py` gegen die echte UVR funktioniert**, wird `can_node.py` in einem
+Folgeschritt auf diesen Weg umgestellt (ersetzt dann `ta_can_protocol.py`s Blockkodierung für den
+Read-Pfad). Der Schreib-Pfad (Pi → UVR, "Netzwerkeingänge setzen") ist im Referenzprojekt nicht
+abgedeckt und bleibt vorerst offen.
+
 ## 4. Home Assistant einbinden
 
 **Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch

@@ -1,0 +1,37 @@
+[FileInfo]
+FileName=ta_dummy.eds
+FileVersion=1
+FileRevision=1
+EDSVersion=4.0
+Description=Platzhalter-EDS fuer TA-Regler (UVR1611/UVR16x2) -- SDO-Zugriff nutzt feste,
+ in ta_canopen.py hinterlegte Objektindizes direkt, das Objektverzeichnis hier dient nur
+ dazu, dass die canopen-Bibliothek ueberhaupt einen RemoteNode anlegen kann.
+CreationDate=01-01-2026
+CreationTime=00:00
+CreatedBy=vcontrold-raspberry-pi
+
+[DeviceInfo]
+VendorName=Technische Alternative
+VendorNumber=0
+ProductName=TA-Regler (UVR1611/UVR16x2, generisch)
+ProductNumber=0
+NrOfRXPDO=0
+NrOfTXPDO=0
+LSS_Supported=0
+
+[MandatoryObjects]
+SupportedObjects=1
+1=0x1000
+
+[1000]
+ParameterName=Device Type
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=0
+
+[OptionalObjects]
+SupportedObjects=0
+
+[ManufacturerObjects]
+SupportedObjects=0
