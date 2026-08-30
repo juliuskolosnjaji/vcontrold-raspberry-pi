@@ -1,5 +1,5 @@
 [Unit]
-Description=Bring up can0 interface for PiCAN2/3 HAT
+Description=Bring up can0 interface for Waveshare 2-CH CAN HAT+
 After=network.target
 Before=can-to-mqtt.service mqtt-to-can.service
 

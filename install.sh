@@ -3,7 +3,8 @@
 # Master-Installskript für Raspberry Pi OS Lite 64-bit auf Raspberry Pi 3B.
 #
 # Installiert vcontrold, richtet eine Python-venv mit allen Abhängigkeiten ein,
-# aktiviert das CAN-Overlay (PiCAN2/PiCAN3) und installiert alle systemd-Dienste
+# aktiviert das CAN-Overlay (Waveshare 2-CH CAN HAT+, MCP2515 über SPI1) und
+# installiert alle systemd-Dienste
 # (aber startet nur die, die ohne weitere Konfiguration sicher laufen — CAN-Bridges
 # und der MQTT-Command-Listener werden installiert, aber NICHT automatisch gestartet,
 # da sie erst config/mqtt.env, config/command_map.json und die FRAME_MAP/COMMAND_MAP
@@ -66,19 +67,22 @@ python3 -m venv "${INSTALL_DIR}/venv"
 chown -R "${REAL_USER}:${REAL_USER}" "${INSTALL_DIR}/venv"
 
 # ---------------------------------------------------------------------------
-# 5. CAN-Overlay (PiCAN2/PiCAN3, MCP2515) aktivieren
+# 5. CAN-Overlay aktivieren: Waveshare 2-CH CAN HAT+ (2x MCP2515 über SPI1,
+#    Default-Verlötung INT_0=GPIO22 fuer CAN0, INT_1=GPIO13 fuer CAN1)
 # ---------------------------------------------------------------------------
-if [[ -n "${BOOT_CONFIG}" ]] && ! grep -q "mcp2515-can0" "${BOOT_CONFIG}"; then
+if [[ -n "${BOOT_CONFIG}" ]] && ! grep -q "mcp2515,spi1-1" "${BOOT_CONFIG}"; then
   echo "==> Aktiviere CAN-Overlay in ${BOOT_CONFIG}"
   {
     echo ""
-    echo "# --- vcontrold-raspberry-pi: PiCAN2/3 (MCP2515) ---"
+    echo "# --- vcontrold-raspberry-pi: Waveshare 2-CH CAN HAT+ (MCP2515, SPI1) ---"
     echo "dtparam=spi=on"
-    echo "dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25"
-    echo "dtoverlay=spi-bcm2835-overlay"
+    echo "dtoverlay=i2c0"
+    echo "dtoverlay=spi1-3cs"
+    echo "dtoverlay=mcp2515,spi1-1,oscillator=16000000,interrupt=22"
+    echo "dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13"
   } >> "${BOOT_CONFIG}"
-  echo "    Hinweis: Oszillator-Frequenz (16000000) und Interrupt-Pin (25) ggf. an dein"
-  echo "    PiCAN-Board anpassen (siehe Doku deines Boards) und danach neu starten."
+  echo "    Hinweis: spi1-1/INT=22 wird can0, spi1-2/INT=13 wird can1 (Standardverlötung"
+  echo "    des Boards). Für die UVR wird nur can0 genutzt. Neustart erforderlich."
   REBOOT_NEEDED=1
 else
   echo "==> CAN-Overlay bereits vorhanden oder Boot-Config nicht gefunden, übersprungen"

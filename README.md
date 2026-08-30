@@ -15,7 +15,7 @@ sudo bash install.sh
 - Systemabhängigkeiten (Build-Tools, `can-utils`, Python)
 - Build & Installation von vcontrold
 - Python-venv mit allen Abhängigkeiten (`venv/`)
-- CAN-Overlay (PiCAN2/3) in der Boot-Config aktivieren
+- CAN-Overlay (Waveshare 2-CH CAN HAT+) in der Boot-Config aktivieren
 - Config-Dateien aus den `.example`-Vorlagen anlegen
 - Alle systemd-Dienste installieren (vcontrold, UI und `can0-up` werden direkt gestartet;
   die MQTT-Bridges erst nach deiner manuellen Konfiguration, siehe Ausgabe am Ende des Skripts)
@@ -35,7 +35,7 @@ Viessmann Vitogas100 --Optolink--> USB --> Raspberry Pi --> vcontrold (daemon)
                                                      |
                                           scripts/vcontrold_to_mqtt.py (Cronjob)
                                                      |
-Technische Alternative UVR --CAN Bus--> PiCAN2/3 HAT (can0)
+Technische Alternative UVR --CAN Bus--> Waveshare 2-CH CAN HAT+ (can0)
                                                      |
                                           scripts/can_to_mqtt.py (systemd)
                                                      |
@@ -122,15 +122,17 @@ Zeile einfügen (Pfad an dein tatsächliches Installationsverzeichnis anpassen, 
 
 ## 3. CAN-Bus (Technische Alternative UVR) an MQTT — bidirektional
 
-Hardware: PiCAN2/PiCAN3 HAT (MCP2515). SPI + CAN-Overlay aktivieren in `/boot/config.txt` (bzw. `/boot/firmware/config.txt` auf neueren Raspbian-Versionen):
+Hardware: [Waveshare 2-CH CAN HAT+](https://www.waveshare.com/wiki/2-CH_CAN_HAT+) (2× MCP2515 über SPI1, in Reihe zwei CAN-Kanäle can0/can1 — für die UVR wird nur can0 genutzt). SPI + CAN-Overlay aktivieren in `/boot/config.txt` (bzw. `/boot/firmware/config.txt` auf neueren Raspbian-Versionen):
 
 ```
 dtparam=spi=on
-dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
-dtoverlay=spi-bcm2835-overlay
+dtoverlay=i2c0
+dtoverlay=spi1-3cs
+dtoverlay=mcp2515,spi1-1,oscillator=16000000,interrupt=22
+dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13
 ```
 
-(Oszillator-Frequenz und Interrupt-Pin je nach HAT-Modell anpassen — siehe Doku deines PiCAN-Boards.)
+Das sind die Werte für die **Standardverlötung** des Boards (INT_0 auf GPIO22, INT_1 auf GPIO13). `spi1-1` wird `can0`, `spi1-2` wird `can1`. Falls die Lötbrücken auf deinem Board umgesetzt wurden (siehe Wiki-Seite), die `interrupt=`-Werte entsprechend anpassen. `install.sh` schreibt diese Zeilen automatisch in die Boot-Config.
 
 CAN-Interface hochfahren (Baudrate der UVR i.d.R. 20 kBit/s — unbedingt in der UVR-Konfiguration nachsehen, TA nutzt üblicherweise 20 kBit/s für den DL/CAN-Bus zwischen Reglern). `install.sh` installiert und startet `can0-up.service` bereits automatisch; manuell:
 
@@ -198,7 +200,7 @@ Erreichbar unter `http://<pi-ip>:5000` (läuft **als root**, da Config-Import na
 
 1. ~~Protokoll der Vitotronic~~ — **erledigt:** V200KW1, Device-ID `2094`, KW-Protokoll (siehe `config/device-vitogas100-v200kw1/`).
 2. **CAN-Bitrate und Frame-Format der UVR** — abhängig vom TA-Gerätetyp (z.B. UVR1611, UVR16x2) und dessen CAN-Konfiguration. Nötig für `FRAME_MAP` (Lesen) und `COMMAND_MAP` (Schreiben) in den CAN-Skripten.
-3. **PiCAN-Board-Variante** (PiCAN2 vs. PiCAN3, Oszillatorfrequenz) für den korrekten Device-Tree-Overlay-Parameter.
+3. ~~CAN-HAT-Modell~~ — **erledigt:** Waveshare 2-CH CAN HAT+ (MCP2515 über SPI1, siehe Abschnitt 3).
 4. **MQTT-Zugangsdaten** des Home-Assistant-Mosquitto-Brokers (Host/User/Passwort) in `config/mqtt.env`.
 
 ## Troubleshooting: vcontrold.service startet nicht
