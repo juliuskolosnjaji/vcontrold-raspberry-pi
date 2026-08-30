@@ -280,6 +280,25 @@ Gibt bei Erfolg Datum/Uhrzeit + alle 21 Slots aus. Implementiert in `scripts/ta_
 (`decode_datensatz()`) und nutzt intern `node.sdo.upload()` der `canopen`-Bibliothek, die den
 Block-Transfer transparent handhabt.
 
+**Wichtige Einschränkung, bestätigt an echter Hardware:** SDO-COB-IDs hängen nur vom *Server*
+(UVR, Node 65) ab, nicht vom Client — `0x641`/`0x5C1` sind fix für jeden, der mit Node 65 spricht.
+Da bereits ein anderer Master (vermutlich CMI) laufend denselben Datensatz abfragt, kollidieren
+eigene aktive `--read-record`-Anfragen mit dessen Traffic (Timeouts/`Object does not exist`
+möglich, je nach Timing). **Für reines Lesen ist deshalb `scripts/sdo_sniffer.py` (rein passiv,
+keine eigene Anfrage) der robustere Weg** — der Datensatz wird ohnehin laufend vom vorhandenen
+Master abgefragt, man muss nur mitlesen. Eigene aktive SDO-Requests sind nur für einen künftigen
+Schreib-Pfad (Pi → UVR) nötig, wo es keine Konkurrenz gibt.
+
+**Als eigener CANopen-Knoten anmelden** (z.B. damit der Pi im TA-CMI sauber auftaucht, nicht als
+"Einbahnstraße"/Fehler): `--heartbeat` meldet den Pi per `ta_canopen.create_own_node()` mit Bootup,
+`OPERATIONAL`-Status und laufendem Heartbeat an — zusätzlich beantwortet ein minimaler SDO-Server
+(`scripts/ta_own_node.eds`) die CANopen-Pflichtobjekte (Device Type, Error Register, Identity),
+ohne die ein Master zwar den Heartbeat sieht, aber auf eigene Anfragen keine Antwort bekommt:
+
+```bash
+venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65 --own-node-id 60 --heartbeat
+```
+
 **Noch offen:** Prüfsummen-Algorithmus (nicht sicherheitskritisch für reines Auslesen, aber gut für
 Validierung), genaue Kanalzuordnung der restlichen Slots, und der Schreib-Pfad (Pi → UVR) — dafür gibt
 es noch kein bestätigtes Objekt/Verfahren. `can_node.py`/`config/can_mapping.json` (Abschnitt 3.1)

@@ -1,0 +1,87 @@
+[FileInfo]
+FileName=ta_own_node.eds
+FileVersion=1
+FileRevision=1
+EDSVersion=4.0
+Description=Objektverzeichnis fuer den Pi als eigenen CANopen-Knoten (z.B. Node 60) --
+ beantwortet nur die CANopen-Pflichtobjekte (Device Type, Error Register, Identity),
+ damit ein Master wie das TA-CMI den Knoten nicht als "Einbahnstrasse"
+ (Heartbeat ohne SDO-Antwort) markiert. Keine echte Funktionalitaet dahinter.
+CreationDate=01-01-2026
+CreationTime=00:00
+CreatedBy=vcontrold-raspberry-pi
+
+[DeviceInfo]
+VendorName=vcontrold-raspberry-pi
+VendorNumber=0
+ProductName=Raspberry Pi Bridge
+ProductNumber=1
+NrOfRXPDO=0
+NrOfTXPDO=0
+LSS_Supported=0
+
+[MandatoryObjects]
+SupportedObjects=3
+1=0x1000
+2=0x1001
+3=0x1018
+
+[1000]
+ParameterName=Device Type
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=0
+
+[1001]
+ParameterName=Error Register
+ObjectType=0x7
+DataType=0x0005
+AccessType=ro
+DefaultValue=0
+
+[1018]
+ParameterName=Identity Object
+ObjectType=0x9
+SubNumber=5
+
+[1018sub0]
+ParameterName=Number of entries
+ObjectType=0x7
+DataType=0x0005
+AccessType=ro
+DefaultValue=4
+
+[1018sub1]
+ParameterName=Vendor ID
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=0
+
+[1018sub2]
+ParameterName=Product Code
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=1
+
+[1018sub3]
+ParameterName=Revision Number
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=1
+
+[1018sub4]
+ParameterName=Serial Number
+ObjectType=0x7
+DataType=0x0007
+AccessType=ro
+DefaultValue=0
+
+[OptionalObjects]
+SupportedObjects=0
+
+[ManufacturerObjects]
+SupportedObjects=0

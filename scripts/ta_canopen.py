@@ -30,19 +30,30 @@ import threading
 
 import canopen
 
-NMT_STATE_BOOTUP = 0x00
-NMT_STATE_OPERATIONAL = 0x05
+# Eigenes, minimales Objektverzeichnis für den Pi als CANopen-Knoten: nur die
+# CANopen-Pflichtobjekte (Device Type, Error Register, Identity). Ohne das erkennt
+# ein Master (z.B. TA-CMI) den Knoten zwar am Heartbeat, kann aber keine SDO-Antwort
+# von ihm bekommen -- CMI markiert das mit einem "Einbahnstraße"-Symbol als Fehler
+# (bestätigt an echter Hardware, siehe README Abschnitt 3.3).
+OWN_NODE_EDS_PATH = str(pathlib.Path(__file__).resolve().parent / "ta_own_node.eds")
+DEFAULT_HEARTBEAT_MS = 1000
 
 
-def start_heartbeat(network: canopen.Network, own_node_id: int, period: float = 1.0) -> canopen.network.PeriodicMessageTask:
-    """Sendet einmalig eine CANopen-Bootup-Nachricht und danach periodisch einen
-    Heartbeat (COB-ID 0x700+own_node_id) -- ohne das meldet sich der Pi bei keinem
-    Master (z.B. TA-CMI) als eigenständiger CANopen-Knoten an, auch wenn er per SDO
-    aktiv Anfragen stellt. Gibt ein Objekt mit .stop() zurück, um den Heartbeat beim
-    Beenden wieder abzuschalten."""
-    cob_id = 0x700 | (own_node_id & 0x7F)
-    network.send_message(cob_id, bytes([NMT_STATE_BOOTUP]))
-    return network.send_periodic(cob_id, bytes([NMT_STATE_OPERATIONAL]), period)
+def create_own_node(network: canopen.Network, own_node_id: int, heartbeat_ms: int = DEFAULT_HEARTBEAT_MS) -> canopen.LocalNode:
+    """Meldet den Pi als eigenständigen CANopen-Knoten an: canopen.LocalNode beantwortet
+    SDO-Anfragen auf die Pflichtobjekte automatisch (network.create_node() verdrahtet
+    das selbst, siehe canopen-Quellcode LocalNode.associate_network), und
+    node.nmt.start_heartbeat() sendet Bootup + periodischen Heartbeat korrekt nach
+    CANopen-Standard (State-Machine inklusive, nicht nur rohe Frames). Zum Beenden:
+    node.nmt.stop_heartbeat() dann network.pop(own_node_id)."""
+    node = network.create_node(own_node_id, OWN_NODE_EDS_PATH)
+    # NmtSlave startet im Zustand INITIALISING (Heartbeat-Byte 0x00) und bleibt dort,
+    # bis explizit auf OPERATIONAL gesetzt wird -- ohne das sendet start_heartbeat()
+    # dauerhaft 0x00, was vermutlich der Grund für den "Einbahnstraße"/Fehler-Status
+    # im CMI war (Node meldet sich nie als betriebsbereit).
+    node.nmt.state = "OPERATIONAL"
+    node.nmt.start_heartbeat(heartbeat_ms)
+    return node
 
 # Bestätigter Datensatz-Zugriff (siehe Modul-Docstring): kompletter Datensatz statt
 # einzelner Werte, per SDO-Block-Transfer (canopen-Bibliothek handhabt das transparent

@@ -92,7 +92,8 @@ def main() -> None:
     parser.add_argument(
         "--heartbeat",
         action="store_true",
-        help="Bootup + periodischen NMT-Heartbeat senden, damit der Pi z.B. im CMI als eigener Knoten auftaucht",
+        help="Als eigener CANopen-Knoten anmelden (Heartbeat + SDO-Server für Pflichtobjekte), "
+        "damit der Pi z.B. im CMI korrekt (nicht als 'Einbahnstraße'/Fehler) auftaucht",
     )
     parser.add_argument("--count", type=int, default=3, help="Anzahl Poll-Durchläufe (Standard: 3)")
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
@@ -106,10 +107,10 @@ def main() -> None:
     network.bus = bus
     network.notifier = can.Notifier(bus, network.listeners)
 
-    heartbeat = None
+    own_node = None
     if args.heartbeat:
-        heartbeat = ta.start_heartbeat(network, args.own_node_id)
-        print(f"Heartbeat gestartet (eigene Node-ID {args.own_node_id}, COB-ID 0x{0x700 | args.own_node_id:x})")
+        own_node = ta.create_own_node(network, args.own_node_id)
+        print(f"Als eigener Knoten angemeldet (Node-ID {args.own_node_id}, Heartbeat + SDO-Server für Pflichtobjekte)")
 
     conn = None
     if args.handshake:
@@ -138,8 +139,9 @@ def main() -> None:
         else:
             poll_uvr1611(node, args.count, args.delay)
     finally:
-        if heartbeat is not None:
-            heartbeat.stop()
+        if own_node is not None:
+            own_node.nmt.stop_heartbeat()
+            network.pop(own_node.id)
         if conn is not None:
             conn.disconnect(args.uvr_node_id, node)
         else:
