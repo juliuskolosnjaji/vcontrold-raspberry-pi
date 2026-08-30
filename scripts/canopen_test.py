@@ -37,13 +37,13 @@ import ta_canopen as ta
 def poll_uvr16x2(node: canopen.RemoteNode, count: int, delay: float) -> None:
     for i in range(count):
         print(f"--- Durchlauf {i + 1}/{count} ---")
-        for subindex in range(1, 17):
+        for ausgang in range(1, 17):
             try:
-                data = node.sdo.upload(ta.UVR16X2_OBJ_EINGANG_WERT, subindex)
+                data = node.sdo.upload(ta.UVR16X2_OBJ_AUSGANG_WERT, ausgang - 1)
                 value, einheit = ta.decode_uvr16x2_value(data)
-                print(f"  Eingang {subindex:2d}: {value:8.1f} {einheit}")
+                print(f"  Ausgang {ausgang:2d}: {value:8.1f} {einheit}")
             except Exception as exc:
-                print(f"  Eingang {subindex:2d}: Fehler ({exc})", file=sys.stderr)
+                print(f"  Ausgang {ausgang:2d}: Fehler ({exc})", file=sys.stderr)
         time.sleep(delay)
 
 
