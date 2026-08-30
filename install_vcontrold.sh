@@ -81,6 +81,13 @@ if [[ ! -f /etc/vcontrold/vcontrold.xml ]]; then
   fi
 else
   echo "==> /etc/vcontrold/vcontrold.xml existiert bereits, wird nicht überschrieben"
+  if [[ -f "${CONFIG_DIR}/vcontrold.xml" ]] && ! grep -q 'device ID="2094"' /etc/vcontrold/vcontrold.xml; then
+    echo "    WARNUNG: Die bestehende Config referenziert nicht Device-ID 2094 (V200KW1)."
+    echo "    Falls das nicht deine tatsächliche Regelung ist, überschreibe sie manuell mit:"
+    echo "      sudo cp ${CONFIG_DIR}/vcontrold.xml /etc/vcontrold/vcontrold.xml"
+    echo "      sudo cp ${CONFIG_DIR}/vito.xml /etc/vcontrold/vito.xml"
+    echo "      sudo systemctl restart vcontrold"
+  fi
 fi
 
 echo "==> Fertig."

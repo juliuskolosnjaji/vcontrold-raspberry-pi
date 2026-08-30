@@ -4,6 +4,10 @@ After=network.target
 
 [Service]
 Type=forking
+# vcontrold startet als root und legt /tmp/vcontrold.log dabei root-only an, gibt
+# dann intern Rechte ab (auf "nobody") -- danach kann es die eigene, root-only
+# Logdatei nicht mehr öffnen ("Permission denied"). Vor jedem Start bereinigen.
+ExecStartPre=-/bin/rm -f /tmp/vcontrold.log
 ExecStart=/usr/sbin/vcontrold -x /etc/vcontrold/vcontrold.xml
 Restart=on-failure
 

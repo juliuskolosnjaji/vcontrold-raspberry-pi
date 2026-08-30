@@ -200,3 +200,30 @@ Erreichbar unter `http://<pi-ip>:5000` (läuft **als root**, da Config-Import na
 2. **CAN-Bitrate und Frame-Format der UVR** — abhängig vom TA-Gerätetyp (z.B. UVR1611, UVR16x2) und dessen CAN-Konfiguration. Nötig für `FRAME_MAP` (Lesen) und `COMMAND_MAP` (Schreiben) in den CAN-Skripten.
 3. **PiCAN-Board-Variante** (PiCAN2 vs. PiCAN3, Oszillatorfrequenz) für den korrekten Device-Tree-Overlay-Parameter.
 4. **MQTT-Zugangsdaten** des Home-Assistant-Mosquitto-Brokers (Host/User/Passwort) in `config/mqtt.env`.
+
+## Troubleshooting: vcontrold.service startet nicht
+
+Falls `sudo systemctl status vcontrold` `failed` zeigt, in dieser Reihenfolge prüfen:
+
+1. **Rate-Limit von systemd:** Nach mehreren Fehlversuchen kurz hintereinander blockiert systemd
+   weitere Startversuche ("Start request repeated too quickly"), auch nach `systemctl restart`.
+   Erst zurücksetzen: `sudo systemctl reset-failed vcontrold`, dann erneut `restart`.
+2. **Echten Fehler finden:** Die normale `journalctl`-Ausgabe zeigt meist nur systemd-Rahmenmeldungen.
+   Die eigentliche Fehlerursache steht in den Zeilen von vcontrold selbst:
+   ```bash
+   sudo journalctl -u vcontrold.service --no-pager -n 50 | grep 'vcontrold\['
+   ```
+3. **`failed to load external entity "/etc/vcontrold.xml"`:** Die installierte systemd-Unit zeigt noch
+   auf den alten, falschen Pfad. `sudo cp systemd/vcontrold.service /etc/systemd/system/vcontrold.service`,
+   `sudo systemctl daemon-reload`, dann neu starten (siehe Abschnitt 1).
+4. **`Could not open /tmp/vcontrold.log: Permission denied`:** vcontrold startet als root, legt die Logdatei
+   root-only an und gibt danach intern Rechte ab (auf `nobody`) — beim nächsten Start darf es die eigene
+   Logdatei dann nicht mehr öffnen. Die aktuelle `systemd/vcontrold.service` räumt das per `ExecStartPre`
+   automatisch auf; bei einer älteren installierten Unit hilft `sudo rm -f /tmp/vcontrold.log` vor dem Neustart.
+5. **`SRV ERR: command unknown` bei `vclient`:** `/etc/vcontrold/vito.xml` enthält nicht die erwarteten
+   Kommandos (z.B. weil dort noch die generische Upstream-Config statt `config/device-vitogas100-v200kw1/`
+   liegt). Prüfen mit `cat /etc/vcontrold/vcontrold.xml | grep device` (sollte `ID="2094"` zeigen) und ggf.
+   manuell überschreiben (Befehle siehe Abschnitt 1).
+6. **`Error communicating with the server` bei `vclient`:** vcontrold läuft, kann aber nicht mit der Heizung
+   sprechen — meist weil der Optolink-USB-Adapter nicht eingesteckt ist oder `<tty>` in `vcontrold.xml` nicht
+   auf das richtige Gerät zeigt (`ls -l /dev/ttyUSB0` bzw. `/dev/optolink` prüfen).
