@@ -25,6 +25,7 @@ mit runterreißen (siehe README Abschnitt 3).
 """
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -42,6 +43,19 @@ COMMAND_MAP_PATH = PROJECT_ROOT / "config" / "command_map.json"
 
 TOPIC_TX_VALUE = "internal/can/tx"          # -> can_node.py: aktueller Wert für CAN-Übertragung
 TOPIC_RX_SETREQUEST = "internal/can/rx_set"  # <- can_node.py: UVR fordert Set an
+
+# vclient gibt bei numerischen Werten Zahl + Einheitstext zurück (z.B. "44.099998 Grad
+# Celsius", "127.500000 %") -- die Einheit ist bereits separat in ha_discovery.py's
+# SENSOR_METADATA hinterlegt (unit_of_measurement), daher hier nur die Zahl behalten.
+# Home Assistant erwartet bei deklarierter Einheit/device_class einen reinen Zahlenwert,
+# sonst bleibt der Sensor "Unbekannt". Enum-artige Antworten (z.B. "WW", "AUS") haben
+# keine führende Zahl und bleiben unverändert.
+_NUMERIC_PREFIX = re.compile(r"^(-?\d+(?:\.\d+)?)(?:\s|$)")
+
+
+def extract_numeric_value(raw: str) -> str:
+    match = _NUMERIC_PREFIX.match(raw)
+    return match.group(1) if match else raw
 
 
 def load_json(path: pathlib.Path, hint: str) -> dict:
@@ -134,6 +148,7 @@ class Orchestrator:
 
     def publish_value(self, key: str, value: str) -> None:
         """Published einen verifizierten/gelesenen Wert an Home Assistant UND an can_node.py."""
+        value = extract_numeric_value(value)
         self.client.publish(f"{self.topic_heizung}/{key}", value, retain=True)
         self.client.publish(f"{TOPIC_TX_VALUE}/{key}", value)
 
