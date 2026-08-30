@@ -59,7 +59,7 @@ def get_ui_config() -> dict:
             s.strip()
             for s in env.get(
                 "MONITORED_SERVICES",
-                "vcontrold,can-to-mqtt,mqtt-to-can,mqtt-command-listener,can0-up",
+                "vcontrold,orchestrator,can-node,can0-up",
             ).split(",")
             if s.strip()
         ],
@@ -165,15 +165,12 @@ MQTT_FIELDS = [
     ("MQTT_TOPIC_HEIZUNG", "Topic-Präfix Heizung", True),
     ("MQTT_TOPIC_UVR", "Topic-Präfix UVR", True),
     ("MQTT_TOPIC_CMD_HEIZUNG", "Topic-Präfix Heizungs-Commands", True),
-    ("MQTT_TOPIC_CMD_UVR", "Topic-Präfix UVR-Commands", True),
 ]
 
 # Dienste, die mqtt.env nutzen und nach einer Änderung neu gestartet werden sollten
 MQTT_DEPENDENT_SERVICES = [
-    "can-to-mqtt",
-    "mqtt-to-can",
-    "mqtt-command-listener",
-    "vcontrold-to-mqtt.timer",
+    "orchestrator",
+    "can-node",
 ]
 
 

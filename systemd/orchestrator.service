@@ -1,12 +1,13 @@
 [Unit]
-Description=MQTT -> vcontrold command listener
+Description=Vcontrold-Orchestrator (Read-Zyklen, Set-Befehle, Verifikation)
 After=network.target vcontrold.service
 Requires=vcontrold.service
 
 [Service]
 Type=simple
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=__INSTALL_DIR__/scripts
-ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/mqtt_command_listener.py
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/orchestrator.py
 Restart=on-failure
 RestartSec=5
 

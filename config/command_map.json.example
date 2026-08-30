@@ -1,10 +1,10 @@
 {
-  "solltemperatur_normal": "setTempRaumNorSoll",
-  "solltemperatur_reduziert": "setTempRaumRedSoll",
-  "solltemperatur_party": "setTempRaumPartySoll",
-  "betriebsart": "setBetriebsart",
-  "betriebsart_spar": "setBetriebSpar",
-  "betriebsart_party": "setBetriebParty",
-  "neigung_heizkennlinie": "setNeigung",
-  "niveau_heizkennlinie": "setNiveau"
+  "solltemperatur_normal": {"set": "setTempRaumNorSoll", "get": "getTempRaumNorSoll"},
+  "solltemperatur_reduziert": {"set": "setTempRaumRedSoll", "get": "getTempRaumRedSoll"},
+  "solltemperatur_party": {"set": "setTempRaumPartySoll", "get": "getTempRaumPartySoll"},
+  "betriebsart": {"set": "setBetriebsart", "get": "getBetriebsart"},
+  "betriebsart_spar": {"set": "setBetriebSpar", "get": "getBetriebSpar"},
+  "betriebsart_party": {"set": "setBetriebParty", "get": "getBetriebParty"},
+  "neigung_heizkennlinie": {"set": "setNeigung", "get": "getNeigung"},
+  "niveau_heizkennlinie": {"set": "setNiveau", "get": "getNiveau"}
 }

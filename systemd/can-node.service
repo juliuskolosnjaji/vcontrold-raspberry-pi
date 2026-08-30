@@ -1,12 +1,13 @@
 [Unit]
-Description=MQTT -> CAN (UVR) command bridge
+Description=CAN-Node (bidirektionale CAN-Anbindung zur UVR16x2)
 After=network.target can0-up.service
 Requires=can0-up.service
 
 [Service]
 Type=simple
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=__INSTALL_DIR__/scripts
-ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/mqtt_to_can.py
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/can_node.py
 Restart=on-failure
 RestartSec=5
 

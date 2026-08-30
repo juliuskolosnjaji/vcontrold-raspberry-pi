@@ -1,0 +1,35 @@
+{
+  "_hinweis": "can_id-Werte sind Platzhalter (0x0). Per CAN-Sniffer (Web-UI) ermitteln und hier eintragen, bevor can_node.py produktiv läuft. Siehe README Abschnitt 3.",
+
+  "own_node_number": 60,
+
+  "tx_analog_blocks": [
+    {
+      "can_id": "0x0",
+      "channels": ["aussentemperatur", "kesseltemperatur_ist", "vorlauftemperatur", "warmwassertemperatur"]
+    }
+  ],
+
+  "tx_digital_blocks": [
+    {
+      "can_id": "0x0",
+      "channels": ["brenner_status", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+    }
+  ],
+
+  "rx_analog_blocks": [
+    {
+      "can_id": "0x0",
+      "channels": ["uvr_kollektortemperatur", "uvr_speichertemperatur", null, null]
+    }
+  ],
+
+  "rx_digital_blocks": [
+    {
+      "can_id": "0x0",
+      "channels": ["uvr_pumpe_status", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+    }
+  ],
+
+  "_beispiel_forward_as_set": "Ein rx-Kanal kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings in rx_analog_blocks/rx_digital_blocks."
+}

@@ -4,11 +4,10 @@
 #
 # Installiert vcontrold, richtet eine Python-venv mit allen Abhängigkeiten ein,
 # aktiviert das CAN-Overlay (Waveshare 2-CH CAN HAT+, MCP2515 über SPI1) und
-# installiert alle systemd-Dienste
-# (aber startet nur die, die ohne weitere Konfiguration sicher laufen — CAN-Bridges
-# und der MQTT-Command-Listener werden installiert, aber NICHT automatisch gestartet,
-# da sie erst config/mqtt.env, config/command_map.json und die FRAME_MAP/COMMAND_MAP
-# in den CAN-Skripten benötigen).
+# installiert alle systemd-Dienste (vcontrold, can0-up und die Web-UI starten
+# sofort; orchestrator.service und can-node.service werden installiert, aber
+# NICHT automatisch gestartet, da sie erst config/mqtt.env, config/command_map.json,
+# config/read_cycles.json und config/can_mapping.json benötigen).
 #
 # Ausführen als: sudo bash install.sh
 set -euo pipefail
@@ -95,8 +94,15 @@ fi
 echo "==> Lege Config-Dateien aus Vorlagen an (falls nicht vorhanden)"
 [[ -f "${INSTALL_DIR}/config/mqtt.env" ]] || cp "${INSTALL_DIR}/config/mqtt.env.example" "${INSTALL_DIR}/config/mqtt.env"
 [[ -f "${INSTALL_DIR}/config/command_map.json" ]] || cp "${INSTALL_DIR}/config/command_map.json.example" "${INSTALL_DIR}/config/command_map.json"
+[[ -f "${INSTALL_DIR}/config/read_cycles.json" ]] || cp "${INSTALL_DIR}/config/read_cycles.json.example" "${INSTALL_DIR}/config/read_cycles.json"
+[[ -f "${INSTALL_DIR}/config/can_mapping.json" ]] || cp "${INSTALL_DIR}/config/can_mapping.json.example" "${INSTALL_DIR}/config/can_mapping.json"
 [[ -f "${INSTALL_DIR}/ui/ui.env" ]] || cp "${INSTALL_DIR}/ui/ui.env.example" "${INSTALL_DIR}/ui/ui.env"
-chown "${REAL_USER}:${REAL_USER}" "${INSTALL_DIR}/config/mqtt.env" "${INSTALL_DIR}/config/command_map.json" "${INSTALL_DIR}/ui/ui.env"
+chown "${REAL_USER}:${REAL_USER}" \
+  "${INSTALL_DIR}/config/mqtt.env" \
+  "${INSTALL_DIR}/config/command_map.json" \
+  "${INSTALL_DIR}/config/read_cycles.json" \
+  "${INSTALL_DIR}/config/can_mapping.json" \
+  "${INSTALL_DIR}/ui/ui.env"
 
 # ---------------------------------------------------------------------------
 # 7. systemd-Units installieren (Platzhalter __INSTALL_DIR__ ersetzen)
@@ -116,8 +122,8 @@ fi
 systemctl enable --now vcontrold-ui
 
 # Diese Dienste erst NACH manueller Konfiguration aktivieren (siehe README):
-# can-to-mqtt, mqtt-to-can, mqtt-command-listener, vcontrold-to-mqtt.timer
-systemctl enable can-to-mqtt mqtt-to-can mqtt-command-listener 2>/dev/null || true
+# orchestrator, can-node
+systemctl enable orchestrator can-node 2>/dev/null || true
 
 echo ""
 echo "======================================================================"
@@ -126,15 +132,16 @@ echo ""
 echo "Noch zu erledigen, bevor alles läuft:"
 echo "  1. Falls das CAN-Overlay neu hinzugefügt wurde: sudo reboot"
 echo "  2. Optolink-USB-Adapter einstecken, prüfen: ls -l /dev/optolink"
-echo "  3. Protokoll (KW/P300) für deine Vitotronic in /etc/vcontrold.xml eintragen"
-echo "     (siehe README.md, Abschnitt 1)"
+echo "  3. Protokoll (KW/P300) für deine Vitotronic in /etc/vcontrold/vcontrold.xml"
+echo "     prüfen (für Vitogas 100/V200KW1 bereits automatisch korrekt, siehe README.md Abschnitt 1)"
 echo "  4. ${INSTALL_DIR}/config/mqtt.env anpassen (Broker-Host/User/Passwort)"
 echo "  5. ${INSTALL_DIR}/ui/ui.env anpassen (Passwort, DEVICE_XML_PATH)"
-echo "  6. FRAME_MAP/COMMAND_MAP in scripts/can_to_mqtt.py und scripts/mqtt_to_can.py"
-echo "     befüllen (mit der Web-UI unter CAN-Sniffer empirisch ermitteln)"
-echo "  7. Danach: sudo systemctl start can-to-mqtt mqtt-to-can mqtt-command-listener"
-echo "  8. Cronjob für vcontrold_to_mqtt.py einrichten ODER"
-echo "     sudo systemctl enable --now vcontrold-to-mqtt.timer (Alternative, siehe README)"
+echo "  6. Danach: sudo systemctl start orchestrator"
+echo "     (fährt sofort die Read-Zyklen aus config/read_cycles.json und nimmt"
+echo "     Set-Befehle über MQTT entgegen -- kein CAN-Mapping dafür nötig)"
+echo "  7. Für die CAN-Anbindung zur UVR: mit dem CAN-Sniffer in der Web-UI die"
+echo "     echten CAN-IDs ermitteln, in ${INSTALL_DIR}/config/can_mapping.json eintragen,"
+echo "     dann: sudo systemctl start can-node (siehe README.md Abschnitt 3)"
 echo ""
 echo "Web-UI erreichbar unter: http://<pi-ip>:5000"
 echo "======================================================================"

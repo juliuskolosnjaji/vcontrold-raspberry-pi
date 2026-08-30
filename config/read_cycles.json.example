@@ -1,0 +1,27 @@
+{
+  "schnell_30s": {
+    "interval_seconds": 30,
+    "commands": {
+      "getTempAist": "aussentemperatur",
+      "getTempKist": "kesseltemperatur_ist",
+      "getTempKsoll": "kesseltemperatur_soll",
+      "getTempWWist": "warmwassertemperatur",
+      "getTempVList": "vorlauftemperatur",
+      "getTempRList": "ruecklauftemperatur",
+      "getBetriebsart": "betriebsart",
+      "getBrennerStatus": "brenner_status"
+    }
+  },
+  "langsam_5min": {
+    "interval_seconds": 300,
+    "commands": {
+      "getBrennerStarts": "brenner_starts",
+      "getBrennerStunden1": "brennerstunden_stufe1",
+      "getBrennerStunden2": "brennerstunden_stufe2",
+      "getVerbrauch": "verbrauch",
+      "getErrorAktiv": "sammelstoerung_aktiv",
+      "getTempRaumNorSoll": "solltemperatur_normal",
+      "getTempRaumRedSoll": "solltemperatur_reduziert"
+    }
+  }
+}

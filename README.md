@@ -31,27 +31,39 @@ in den weiteren Abschnitten überspringen (die Units sind durch `install.sh` sch
 Ziel-Architektur:
 
 ```
-Viessmann Vitogas100 --Optolink--> USB --> Raspberry Pi --> vcontrold (daemon)
+Viessmann Vitogas100 --Optolink--> USB --> vcontrold (daemon, Port 3002)
+                                                     ^
+                                                     | vclient (get/set)
                                                      |
-                                          scripts/vcontrold_to_mqtt.py (Cronjob)
-                                                     |
-Technische Alternative UVR --CAN Bus--> Waveshare 2-CH CAN HAT+ (can0)
-                                                     |
-                                          scripts/can_to_mqtt.py (systemd)
-                                                     |
-                                                     v
-                                        MQTT Broker (läuft auf Home Assistant)
-                                                     |
-                                                     v
-                                              Home Assistant
-                                                     |
-                                    (Commands über MQTT zurück)
-                                                     |
-                                          scripts/mqtt_command_listener.py (systemd)
-                                                     |
-                                                     v
-                                        vclient (vcontrold CLI) -> Heizung
+                                   scripts/orchestrator.py (systemd-Daemon)
+                                   - fährt mehrere Read-Zyklen (config/read_cycles.json)
+                                   - nimmt Set-Befehle von MQTT UND von der UVR entgegen
+                                   - verifiziert jeden Set-Befehl mit einem Get danach
+                                             |                        ^
+                                  MQTT (heizung/*,              internal/can/rx_set/*
+                                  internal/can/tx/*)                    |
+                                             v                        |
+                                   MQTT Broker (auf Home Assistant)    |
+                                             ^                        |
+                                             |                        |
+                                   scripts/can_node.py (systemd-Daemon, eigener Prozess)
+                                   - sendet Vcontrold-Werte blockweise (4 analog / 16 digital
+                                     pro CAN-Frame) an die UVR
+                                   - empfängt CAN-Frames von der UVR, published sie und
+                                     leitet Set-Anfragen an den Orchestrator weiter
+                                             |
+                                       Waveshare 2-CH CAN HAT+ (can0)
+                                             |
+                                Technische Alternative UVR16x2 (CAN-Bus)
 ```
+
+Zwei getrennte, dauerhaft laufende systemd-Dienste statt vieler kleiner Skripte:
+`orchestrator.py` (Vcontrold-Zyklen, Set-Verifikation, Routing) und `can_node.py`
+(CAN-Encoding/Decoding). Getrennt, damit ein Fehler in der CAN-Dekodierung nicht
+auch die Vcontrold-Zyklen und die MQTT-Befehlsverarbeitung lahmlegt. Beide
+kommunizieren über interne MQTT-Topics auf demselben Broker (kein Cronjob,
+da Cronjobs zwischen zwei Läufen keine offene MQTT-/CAN-Verbindung halten und
+damit nicht "on demand" auf Set-Befehle reagieren könnten).
 
 ## 1. vcontrold installieren
 
@@ -93,32 +105,35 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 
 (Kommandoname hängt vom Datenpunkt-Namen in deiner Geräte-XML ab — mit `vclient -c "list"` bzw. der XML-Datei nachsehen, welche Getter/Setter für dein Gerät existieren.)
 
-## 2. Vcontrold-Werte per Cronjob an MQTT senden
+## 2. Orchestrator: Read-Zyklen, Set-Befehle, Verifikation
 
-`scripts/vcontrold_to_mqtt.py` fragt eine Liste von Datenpunkten per `vclient` ab und published sie auf `heizung/<datenpunkt>`.
+`scripts/orchestrator.py` läuft dauerhaft als systemd-Dienst und übernimmt drei Aufgaben:
 
-Konfiguration in `config/mqtt.env` (Broker-Host = deine Home-Assistant-IP, Port meist 1883):
+1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<subtopic>` published (für Home Assistant) UND auf `internal/can/tx/<subtopic>` (damit `can_node.py` denselben Stand an die UVR weiterreicht).
+2. **On-demand Set-Befehle**, sowohl von Home Assistant (`heizung/cmd/<key>`) als auch von der UVR selbst (`can_node.py` leitet CAN-seitige Set-Anfragen über `internal/can/rx_set/<key>` weiter).
+3. **Verifikation:** nach jedem Set-Befehl wird automatisch der zugehörige Get-Befehl nachgeschickt, und erst der so bestätigte Ist-Wert wird published — nicht der ungeprüfte Set-Rückgabewert.
+
+Konfiguration:
 
 ```bash
 cp config/mqtt.env.example config/mqtt.env
-nano config/mqtt.env
+nano config/mqtt.env       # Broker-Host = deine Home-Assistant-IP
+cp config/read_cycles.json.example config/read_cycles.json
+nano config/read_cycles.json   # Zyklen/Intervalle nach Bedarf anpassen
+cp config/command_map.json.example config/command_map.json
+nano config/command_map.json   # {"key": {"set": "...", "get": "..."}} pro Set-fähigem Datenpunkt
 ```
 
-Abhängigkeiten sind bereits in der von `install.sh` angelegten venv installiert (`venv/bin/pip install -r requirements.txt`, falls manuell nötig).
+`command_map.json` verknüpft einen MQTT-Schlüssel mit dem passenden `vclient`-Set- **und** Get-Kommando (für die Verifikation), z.B. Topic `heizung/cmd/solltemperatur_normal` mit Payload `21.5` → `vclient -c "setTempRaumNorSoll 21.5"`, danach automatisch `vclient -c "getTempRaumNorSoll"` zur Bestätigung.
 
-Cronjob einrichten (alle 60 Sekunden ist mit normalem Cron nicht möglich, minimal ist 1 Minute — für höhere Frequenz besser systemd-Timer, siehe unten):
+Von `install.sh` bereits installiert, aber bewusst nicht automatisch gestartet (erst nach Konfiguration):
 
 ```bash
-crontab -e
+sudo systemctl start orchestrator
+sudo systemctl status orchestrator
 ```
 
-Zeile einfügen (Pfad an dein tatsächliches Installationsverzeichnis anpassen, z.B. `/home/pi/vcontrold-raspberry-pi`):
-
-```
-* * * * * /home/pi/vcontrold-raspberry-pi/venv/bin/python3 /home/pi/vcontrold-raspberry-pi/scripts/vcontrold_to_mqtt.py >> /var/log/vcontrold_to_mqtt.log 2>&1
-```
-
-**Alternative (empfohlen für <60s Intervall):** `systemd/vcontrold-to-mqtt.timer` + `.service` verwenden statt Cron — liegt bei, falls gewünscht.
+Der Orchestrator braucht **kein** CAN-Mapping, um zu laufen — die Read-Zyklen und MQTT-Set-Befehle funktionieren unabhängig von `can_node.py` (siehe Abschnitt 3). Die `internal/can/tx/*`-Publishes gehen einfach ins Leere, solange `can_node.py` nicht läuft.
 
 ## 3. CAN-Bus (Technische Alternative UVR) an MQTT — bidirektional
 
@@ -142,48 +157,46 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now can0-up
 ```
 
-Die CAN-Anbindung läuft in **beide Richtungen** über zwei getrennte Dienste (von `install.sh` bereits installiert, aber bewusst **nicht gestartet**, bis du `FRAME_MAP`/`COMMAND_MAP` befüllt hast):
+`scripts/can_node.py` läuft als eigener systemd-Dienst und ist der **einzige** Prozess, der den CAN-Socket öffnet — getrennt vom Orchestrator, damit ein CAN-Decoder-Fehler nicht auch die Vcontrold-Zyklen und MQTT-Befehlsverarbeitung lahmlegt. Er kommuniziert mit `orchestrator.py` ausschließlich über interne MQTT-Topics (`internal/can/tx/*`, `internal/can/rx_set/*`).
 
-**a) UVR → Pi → MQTT** (`scripts/can_to_mqtt.py`): liest Frames von `can0` mit `python-can`, dekodiert sie (**Platzhalter-Mapping in `FRAME_MAP`** — die CAN-IDs/Bytes der Technische-Alternative-Geräte sind proprietär und müssen anhand deiner UVR-Konfiguration bzw. Community-Dokumentation ermittelt werden) und published auf `uvr/<kanal>`.
+**Warum das rohe TA-CAN-Protokoll reverse-engineert werden muss:** Wir haben die offiziellen TA-Schnittstellen gründlich geprüft (CMI-JSON-API bis Version 8/2025, CoE-Anleitung) — keine davon eignet sich:
+- Die **CMI-JSON-API** ist explizit nur lesend ("obtain values from all connected CAN-nodes") und auf 1 Anfrage/Minute begrenzt — für Set-Befehle und schnelle Zyklen ungeeignet.
+- **CoE** (CAN over Ethernet) funktioniert nur zwischen zwei physischen C.M.I.-Geräten und ist damit für den Pi kein gangbarer Weg.
+- Das rohe CAN-Netzwerk-Ein-/Ausgang-Format ist bytegenau **nirgendwo öffentlich dokumentiert** (auch nicht als CANopen/J1939/Modbus — das UVR16x2-Handbuch erwähnt "CANopen" nur einmal beiläufig im Kontext der Netzwerktopologie, implementiert aber nachweislich sein eigenes proprietäres Format, keine echten CANopen-Objektverzeichnisse/SDO/PDO).
 
-```bash
-sudo systemctl start can-to-mqtt   # nach Anpassung von FRAME_MAP
-```
+Bestätigt ist nur die Blockstruktur (aus TAs eigener CoE-Anleitung): **analoge Netzwerkausgänge werden in 4er-Blöcken übertragen** (2 Byte pro Wert = 8 Byte Payload, genau ein CAN-Frame), **digitale in 16er-Blöcken** (1 Bit pro Wert = 2 Byte Payload). Das ist in [`scripts/ta_can_protocol.py`](scripts/ta_can_protocol.py) so umgesetzt; die eigentlichen **CAN-IDs sind Platzhalter** und müssen empirisch ermittelt werden:
 
-**b) Home Assistant → MQTT → Pi → UVR** (`scripts/mqtt_to_can.py`): abonniert `uvr/cmd/<kanal>` und sendet daraufhin einen CAN-Frame an die UVR (**Platzhalter-Mapping in `COMMAND_MAP`**, ebenfalls anhand deiner UVR-CAN-Spezifikation zu befüllen).
+1. Auf der UVR16x2 unter "CAN-Bus" > "CAN-Ausgänge" einen Testkanal mit bekanntem Wert konfigurieren (z.B. einen Analogausgang auf einen leicht wiedererkennbaren Wert wie 12,3°C stellen).
+2. In der Web-UI unter **CAN-Sniffer** (siehe Abschnitt 6) für ein paar Sekunden mitschneiden.
+3. Den Frame mit passendem Wert im Datenfeld identifizieren (bei 4er-Blöcken: einer der vier `int16`-Werte im 8-Byte-Payload entspricht `Wert × 10`).
+4. Die gefundene CAN-ID und Kanal-Position in `config/can_mapping.json` eintragen (siehe `can_mapping.json.example` für das Format).
+5. Für Set-Richtung (Pi → UVR) das gleiche Vorgehen umgekehrt: einen Wert über `orchestrator.py` (bzw. testweise direkt per `cansend`) senden und beobachten, ob die UVR ihn als Netzwerkeingang übernimmt.
 
-```bash
-sudo systemctl start mqtt-to-can   # nach Anpassung von COMMAND_MAP
-```
+Alternativ/ergänzend: `technik@ta.co.at` anschreiben und nach der CAN-Wire-Protokoll-Dokumentation für Drittanbieter-CAN-Knoten fragen (TA verkauft selbst CAN-I/O-Module, die genau das brauchen).
 
-**Protokoll herausfinden:** Da die CAN-IDs/Byte-Layouts von Technische Alternative nicht offiziell dokumentiert sind, starte `can_to_mqtt.py` zunächst mit leerem `FRAME_MAP` — es loggt dann alle unbekannten Frames (`id=0x... data=...`) nach stderr. Über gezielte Änderungen an der UVR (z.B. eine Pumpe manuell ein-/ausschalten) lässt sich beobachten, welche ID/Bytes sich ändern, und so das Mapping empirisch ableiten. Alternativ: `candump can0` (aus `can-utils`, `sudo apt install can-utils`) zum manuellen Mitschneiden nutzen.
-
-## 4. Commands von Home Assistant zurück an vcontrold
-
-`scripts/mqtt_command_listener.py` abonniert `heizung/cmd/#` und ruft für jeden empfangenen Befehl den passenden `vclient`-Set-Befehl auf, z.B. Topic `heizung/cmd/solltemperatur` mit Payload `21.5` → `vclient -c "setSolltempNormal 21.5"`.
-
-Die Zuordnung Topic → vclient-Kommando steht in `config/command_map.json` — dort trägst du die tatsächlichen Setter-Namen deiner Geräte-XML ein.
-
-Von `install.sh` bereits installiert, aber nicht gestartet — nach Anpassung von `command_map.json`:
+Config anlegen und Dienst starten (von `install.sh` bereits installiert, aber bewusst **nicht gestartet**, bis `can_mapping.json` befüllt ist):
 
 ```bash
-sudo systemctl start mqtt-command-listener
+cp config/can_mapping.json.example config/can_mapping.json
+nano config/can_mapping.json   # per CAN-Sniffer ermittelte CAN-IDs eintragen
+sudo systemctl start can-node
+sudo systemctl status can-node
 ```
 
-## 5. Home Assistant einbinden
+## 4. Home Assistant einbinden
 
 `homeassistant/configuration_snippet.yaml` enthält Beispiel-`mqtt: sensor:` und `mqtt: number:`/`climate:`-Einträge für die veröffentlichten Topics. In `configuration.yaml` von Home Assistant einbinden oder per MQTT-Discovery automatisch erkennen lassen (Discovery-Variante ist im Snippet als Kommentar skizziert).
 
-## 6. Web-UI (Konsole, Config-Import, MQTT-Einstellungen, Diagnose, CAN-Sniffer)
+## 5. Web-UI (Konsole, Config-Import, MQTT-Einstellungen, Diagnose, CAN-Sniffer)
 
 Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 
 - **Konsole**: Getter/Setter aus deiner Geräte-XML per Dropdown auswählen oder frei eingeben, direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
 - **Config-Import**: Geräte-XML hochladen, Backup der bisherigen `/etc/vcontrold.xml` wird automatisch angelegt, danach `systemctl restart vcontrold`.
 - **Config-Editor**: `vcontrold.xml` und `vito.xml` direkt als Text im Browser bearbeiten (z.B. um schnell einen neuen Getter/Setter hinzuzufügen), statt eine Datei hochzuladen. Validiert XML vor dem Speichern, legt Backups an, startet `vcontrold` neu.
-- **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Bridge-Dienste (`can-to-mqtt`, `mqtt-to-can`, `mqtt-command-listener`, `vcontrold-to-mqtt.timer`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
-- **Diagnose**: Status aller Dienste (vcontrold, can-to-mqtt, mqtt-to-can, mqtt-command-listener, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
-- **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — hilft dabei, das UVR-Protokoll für `FRAME_MAP`/`COMMAND_MAP` empirisch zu ermitteln.
+- **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
+- **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
+- **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 
 `install.sh` legt `ui/ui.env` aus der Vorlage an und startet den Dienst bereits automatisch. Danach unbedingt:
 
@@ -199,7 +212,7 @@ Erreichbar unter `http://<pi-ip>:5000` (läuft **als root**, da Config-Import na
 ## Offene Punkte, die nur du klären kannst
 
 1. ~~Protokoll der Vitotronic~~ — **erledigt:** V200KW1, Device-ID `2094`, KW-Protokoll (siehe `config/device-vitogas100-v200kw1/`).
-2. **CAN-Bitrate und Frame-Format der UVR** — abhängig vom TA-Gerätetyp (z.B. UVR1611, UVR16x2) und dessen CAN-Konfiguration. Nötig für `FRAME_MAP` (Lesen) und `COMMAND_MAP` (Schreiben) in den CAN-Skripten.
+2. **CAN-IDs der UVR-Netzwerk-Ein-/Ausgänge** — bytegenau nicht öffentlich dokumentiert, muss per CAN-Sniffer empirisch ermittelt und in `config/can_mapping.json` eingetragen werden (siehe Abschnitt 3).
 3. ~~CAN-HAT-Modell~~ — **erledigt:** Waveshare 2-CH CAN HAT+ (MCP2515 über SPI1, siehe Abschnitt 3).
 4. **MQTT-Zugangsdaten** des Home-Assistant-Mosquitto-Brokers (Host/User/Passwort) in `config/mqtt.env`.
 

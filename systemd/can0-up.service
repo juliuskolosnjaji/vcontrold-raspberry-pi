@@ -1,7 +1,7 @@
 [Unit]
 Description=Bring up can0 interface for Waveshare 2-CH CAN HAT+
 After=network.target
-Before=can-to-mqtt.service mqtt-to-can.service
+Before=can-node.service
 
 [Service]
 Type=oneshot
