@@ -61,12 +61,13 @@
           <select name="var_component_{{ row.name }}">
             <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
             <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
+            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
           </select>
         </td>
-        <td class="discovery-field discovery-number" {% if not row.settable or row.component == "select" %}style="display:none"{% endif %}>
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
           <input type="text" name="var_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C">
         </td>
-        <td class="discovery-field discovery-number" {% if not row.settable or row.component == "select" %}style="display:none"{% endif %}>
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
           <input type="text" name="var_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min">
           <input type="text" name="var_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max">
           <input type="text" name="var_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step">
@@ -113,16 +114,16 @@ document.querySelectorAll('.settable-toggle').forEach(function (checkbox) {
 
   function update() {
     const settable = checkbox.checked;
-    const isSelect = componentSelect && componentSelect.value === 'select';
+    const component = componentSelect ? componentSelect.value : 'number';
     row.querySelectorAll('.discovery-field').forEach(function (el) {
       if (!settable) {
         el.style.display = 'none';
         return;
       }
       if (el.classList.contains('discovery-number')) {
-        el.style.display = isSelect ? 'none' : '';
+        el.style.display = component === 'number' ? '' : 'none';
       } else if (el.classList.contains('discovery-select')) {
-        el.style.display = isSelect ? '' : 'none';
+        el.style.display = component === 'select' ? '' : 'none';
       } else {
         el.style.display = '';
       }

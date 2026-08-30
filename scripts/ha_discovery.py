@@ -106,7 +106,7 @@ def build_binary_sensor_config(key: str, state_topic: str, device: dict = None, 
 def build_writable_config(
     key: str, state_topic: str, command_topic: str, discovery_opts: dict, device: dict = None, id_prefix: str = "vcontrold"
 ) -> tuple[str, dict]:
-    """Gibt (component, config) zurück, component ist 'number' oder 'select'."""
+    """Gibt (component, config) zurück, component ist 'number', 'select' oder 'switch'."""
     component = discovery_opts.get("component", "number")
     config = {
         "name": _friendly_name(key),
@@ -123,6 +123,10 @@ def build_writable_config(
             config["unit_of_measurement"] = discovery_opts["unit"]
     elif component == "select":
         config["options"] = discovery_opts.get("options", [])
+    elif component == "switch":
+        # Rohwert von vclient/vito.xml ist "0"/"1", passt direkt auf payload_off/on.
+        config["payload_on"] = "1"
+        config["payload_off"] = "0"
     return component, config
 
 

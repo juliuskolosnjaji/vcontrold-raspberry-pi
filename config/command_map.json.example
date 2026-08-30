@@ -13,8 +13,12 @@
   "Betriebsart": {
     "discovery": {"component": "select", "options": ["WW", "RED", "NORM", "H+WW", "ABSCHALT"]}
   },
-  "BetriebSpar": {},
-  "BetriebParty": {},
+  "BetriebSpar": {
+    "discovery": {"component": "switch"}
+  },
+  "BetriebParty": {
+    "discovery": {"component": "switch"}
+  },
   "Neigung": {},
   "Niveau": {}
 }
