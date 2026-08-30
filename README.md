@@ -200,7 +200,12 @@ sudo systemctl status can-node
 Alle bisherigen CAN-Kanäle sind entweder Vitotronic-Werte (Pi → UVR, Namen aus `vito.xml`) oder
 reine Anzeigewerte von der UVR (UVR → Pi). Für einen Wert, den Home Assistant direkt **lesen und
 schreiben** soll — ohne dass die Vitotronic überhaupt beteiligt ist (z.B. ein manueller Override,
-den die UVR-Programmierung selbst auswertet) — gibt es `config/can_variables.json`:
+den die UVR-Programmierung selbst auswertet) — gibt es `config/can_variables.json`.
+
+**Über die Web-UI** (empfohlen): Auf der CAN-Einstellungen-Seite ganz unten "Custom CAN-Variablen"
+— Name, Typ (Number/Select) und je nach Typ Einheit/Min/Max/Step oder Optionen eintragen, speichern.
+
+**Manuell**, falls gewünscht:
 
 ```bash
 cp config/can_variables.json.example config/can_variables.json

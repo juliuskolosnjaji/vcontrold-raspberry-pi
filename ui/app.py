@@ -31,6 +31,7 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI_ENV_PATH = pathlib.Path(__file__).resolve().parent / "ui.env"
 MQTT_ENV_PATH = PROJECT_ROOT / "config" / "mqtt.env"
 CAN_MAPPING_PATH = PROJECT_ROOT / "config" / "can_mapping.json"
+CAN_VARIABLES_PATH = PROJECT_ROOT / "config" / "can_variables.json"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
@@ -301,6 +302,15 @@ def load_can_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
+CAN_VARIABLE_ROWS = 8  # Anzahl editierbarer Zeilen für custom CAN-Variablen
+
+
+def load_can_variables() -> dict:
+    if not CAN_VARIABLES_PATH.exists():
+        return {}
+    return {k: v for k, v in json.loads(CAN_VARIABLES_PATH.read_text()).items() if isinstance(v, dict)}
+
+
 def channel_to_slot(c, allow_forward: bool) -> dict:
     if allow_forward:
         if isinstance(c, dict):
@@ -333,6 +343,7 @@ def can_settings():
     message = None
     message_ok = None
     mapping = load_can_mapping()
+    can_variables = load_can_variables()
 
     if request.method == "POST":
         new_mapping = {
@@ -340,6 +351,29 @@ def can_settings():
             "own_node_number": int(request.form.get("own_node_number", 1) or 1),
         }
         errors = []
+
+        new_can_variables = {}
+        for i in range(CAN_VARIABLE_ROWS):
+            name = request.form.get(f"canvar_name_{i}", "").strip()
+            if not name:
+                continue
+            component = request.form.get(f"canvar_component_{i}", "number")
+            discovery = {"component": component}
+            if component == "number":
+                unit = request.form.get(f"canvar_unit_{i}", "").strip()
+                if unit:
+                    discovery["unit"] = unit
+                for field in ("min", "max", "step"):
+                    raw = request.form.get(f"canvar_{field}_{i}", "").strip()
+                    if raw:
+                        try:
+                            discovery[field] = float(raw) if "." in raw else int(raw)
+                        except ValueError:
+                            errors.append(f"Custom CAN-Variable '{name}': ungültiger Wert für {field}")
+            elif component == "select":
+                options_raw = request.form.get(f"canvar_options_{i}", "").strip()
+                discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
+            new_can_variables[name] = {"discovery": discovery}
 
         for key, label, is_analog, allow_forward in CAN_BLOCK_CATEGORIES:
             slots_per_block = ANALOG_SLOTS_PER_BLOCK if is_analog else TOTAL_SLOTS
@@ -386,10 +420,13 @@ def can_settings():
         if errors:
             message, message_ok = " / ".join(errors), False
             mapping = new_mapping  # editierte (fehlerhafte) Werte im Formular zeigen
+            can_variables = new_can_variables
         else:
             CAN_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
             CAN_MAPPING_PATH.write_text(json.dumps(new_mapping, indent=2, ensure_ascii=False) + "\n")
+            CAN_VARIABLES_PATH.write_text(json.dumps(new_can_variables, indent=2, ensure_ascii=False) + "\n")
             mapping = new_mapping
+            can_variables = new_can_variables
 
             status = diagnostics.service_status("can-node")
             if status["state"] == "active":
@@ -424,6 +461,24 @@ def can_settings():
         else []
     )
 
+    canvar_rows = []
+    for name, entry in can_variables.items():
+        discovery = entry.get("discovery", {})
+        canvar_rows.append(
+            {
+                "name": name,
+                "component": discovery.get("component", "number"),
+                "unit": discovery.get("unit", ""),
+                "min": discovery.get("min", ""),
+                "max": discovery.get("max", ""),
+                "step": discovery.get("step", ""),
+                "options": ", ".join(discovery.get("options", [])),
+            }
+        )
+    while len(canvar_rows) < CAN_VARIABLE_ROWS:
+        canvar_rows.append({"name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
+    canvar_rows = canvar_rows[:CAN_VARIABLE_ROWS]
+
     return render_template(
         "can_settings.html",
         bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
@@ -432,6 +487,8 @@ def can_settings():
         total_slots=TOTAL_SLOTS,
         available_subtopics=sorted(available_subtopics),
         available_set_keys=available_set_keys,
+        canvar_rows=canvar_rows,
+        num_canvar_rows=range(CAN_VARIABLE_ROWS),
         message=message,
         message_ok=message_ok,
     )
