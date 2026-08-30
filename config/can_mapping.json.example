@@ -4,6 +4,12 @@
   "bitrate": 50000,
   "own_node_number": 60,
 
+  "_hinweis_ta_network_outputs": "Bestätigtes Schema (siehe README Abschnitt 3.3, ta_canopen.py): sendet Ausgang N (1-16) unter COB-ID 0x200/0x280/0x300/0x380 + own_node_number (analog) bzw. 0x180 + own_node_number (digital, noch nicht gegen echte Hardware getestet). Auf der UVR als 'CAN-Analogeingang'/'CAN-Digitaleingang' mit Knotennummer = own_node_number und passender Ausgangsnummer konfigurieren. Über die Web-UI (CAN-Einstellungen) editierbar.",
+  "ta_network_outputs": {
+    "analog": ["TempKist", "TempWWist", null, null, null, null, null, null, null, null, null, null, null, null, null, null],
+    "digital": ["BrennerStatus", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+  },
+
   "tx_analog_blocks": [
     {
       "can_id": "0x0",

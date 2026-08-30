@@ -303,6 +303,7 @@ def load_can_mapping() -> dict:
 
 
 CAN_VARIABLE_ROWS = 8  # Anzahl editierbarer Zeilen für custom CAN-Variablen
+TA_NETWORK_OUTPUT_SLOTS = 16  # TA-Netzwerkausgänge (bestätigtes Schema, siehe ta_canopen.py)
 
 
 def load_can_variables() -> dict:
@@ -351,6 +352,15 @@ def can_settings():
             "own_node_number": int(request.form.get("own_node_number", 1) or 1),
         }
         errors = []
+
+        ta_net_analog = [
+            request.form.get(f"ta_net_analog_{i}", "").strip() or None for i in range(TA_NETWORK_OUTPUT_SLOTS)
+        ]
+        ta_net_digital = [
+            request.form.get(f"ta_net_digital_{i}", "").strip() or None for i in range(TA_NETWORK_OUTPUT_SLOTS)
+        ]
+        if any(ta_net_analog) or any(ta_net_digital):
+            new_mapping["ta_network_outputs"] = {"analog": ta_net_analog, "digital": ta_net_digital}
 
         new_can_variables = {}
         for i in range(CAN_VARIABLE_ROWS):
@@ -479,6 +489,10 @@ def can_settings():
         canvar_rows.append({"name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
     canvar_rows = canvar_rows[:CAN_VARIABLE_ROWS]
 
+    ta_net_outputs = mapping.get("ta_network_outputs", {})
+    ta_net_analog = (ta_net_outputs.get("analog", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
+    ta_net_digital = (ta_net_outputs.get("digital", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
+
     return render_template(
         "can_settings.html",
         bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
@@ -488,6 +502,8 @@ def can_settings():
         available_subtopics=sorted(available_subtopics),
         available_set_keys=available_set_keys,
         canvar_rows=canvar_rows,
+        ta_net_analog=ta_net_analog,
+        ta_net_digital=ta_net_digital,
         num_canvar_rows=range(CAN_VARIABLE_ROWS),
         message=message,
         message_ok=message_ok,

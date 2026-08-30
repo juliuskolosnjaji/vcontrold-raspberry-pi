@@ -73,6 +73,25 @@
   </div>
 
   <div class="card">
+    <h2>TA-Netzwerkausgänge (bestätigtes Schema)</h2>
+    <p>Sendet Werte im tatsächlich von TA verwendeten Format (COB-ID <code>0x200/0x280/0x300/0x380 +
+       Eigene Knoten-Nummer</code> für Analog, <code>0x180 + Eigene Knoten-Nummer</code> für Digital —
+       siehe README Abschnitt 3.3), damit sie auf der UVR als "CAN-Analogeingang"/"CAN-Digitaleingang"
+       mit passender Knotennummer + Ausgangsnummer empfangen werden können. Analog-Kodierung ist gegen
+       echte Hardware bestätigt, Digital noch nicht getestet.</p>
+    <table class="canvar-table">
+      <tr><th>Ausgang</th><th>Analog-Variable</th><th>Digital-Variable</th></tr>
+      {% for i in range(total_slots) %}
+      <tr>
+        <td>{{ i + 1 }}</td>
+        <td><input type="text" name="ta_net_analog_{{ i }}" value="{{ ta_net_analog[i] or '' }}" list="tx-subtopics" placeholder="z.B. TempKist"></td>
+        <td><input type="text" name="ta_net_digital_{{ i }}" value="{{ ta_net_digital[i] or '' }}" list="tx-subtopics" placeholder="z.B. BrennerStatus"></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
     <h2>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</h2>
     <p>Komplett unabhängig von <code>vito.xml</code>/vcontrold: Home Assistant kann diese Werte
        direkt lesen <strong>und</strong> schreiben, der Wert geht per CAN direkt an die UVR.

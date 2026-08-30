@@ -333,10 +333,21 @@ Wert kam korrekt als `12,3 °C` am UVR-Analogeingang an — **Voraussetzung:** d
 des CAN-Analogeingangs auf der UVR muss auf den passenden Typ (z.B. "Temperatur") gestellt werden,
 sonst zeigt die UVR den rohen Ganzzahlwert unskaliert an (`123` statt `12,3`).
 
+**Produktiv nutzbar über `can_node.py`:** `config/can_mapping.json`s `ta_network_outputs` legt fest,
+welche vito.xml-Variablen als welcher Netzwerkausgang gesendet werden (`analog`/`digital`, je 16
+Slots = Ausgang 1-16) — am einfachsten über die Web-UI unter **CAN-Einstellungen** → "TA-Netzwerk­
+ausgänge" editierbar, kein manuelles JSON-Bearbeiten nötig. `own_node_number` (dieselbe Einstellung
+wie für den Rest der CAN-Seite) bestimmt die eigene Knoten-Nummer für die COB-ID-Berechnung. Auf der
+UVR muss pro gewünschtem Wert ein "CAN-Analogeingang"/"CAN-Digitaleingang" mit passender
+Knotennummer + Ausgangsnummer angelegt werden (Messgröße auf einen konkreten Typ stellen, siehe
+oben). `ta_can_protocol.py`s alte Blockkodierung aus Abschnitt 3.1 bleibt parallel bestehen
+(`tx_analog_blocks`/`tx_digital_blocks`), falls das bestätigte Schema für einen Anwendungsfall
+nicht passt.
+
 **Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
-reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die produktive
-Integration dieses gesamten CANopen-Wegs in `can_node.py` (ersetzt dann `ta_can_protocol.py`s
-Blockkodierung aus Abschnitt 3.1, die weiterhin produktiv läuft, bis die Umstellung erfolgt ist).
+reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die Digital-Ausgang-
+Kodierung (`0x180+Node`, Bitmaske) ist noch nicht gegen echte Hardware getestet (nur analog
+bestätigt).
 
 ## 4. Home Assistant einbinden
 

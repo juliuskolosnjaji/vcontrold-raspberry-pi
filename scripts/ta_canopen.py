@@ -38,6 +38,35 @@ import canopen
 OWN_NODE_EDS_PATH = str(pathlib.Path(__file__).resolve().parent / "ta_own_node.eds")
 DEFAULT_HEARTBEAT_MS = 1000
 
+# BESTÄTIGT gegen echte Hardware (siehe README Abschnitt 3.3): TA-Netzwerkausgänge, aus
+# eigener Node-ID berechnete COB-ID (nicht die generische CANopen-TPDO-Formel!). Quelle:
+# zwei unabhängige Community-Implementierungen (HA-Community-Guide "UVR16x2 via CANable/
+# candlelight, no CMI", FHEM-CanOverEthernet-Modul), per scripts/send_network_output_test.py
+# gegen die echte UVR verifiziert (Wert kam korrekt am konfigurierten CAN-Analogeingang an).
+ANALOG_OUTPUT_COB_ID_BASES = (0x200, 0x280, 0x300, 0x380)  # Ausgänge 1-4, 5-8, 9-12, 13-16
+DIGITAL_OUTPUT_COB_ID_BASE = 0x180  # Ausgänge 1-16 als Bitmaske -- NICHT verifiziert (nur analog getestet)
+
+
+def encode_analog_outputs(values: list) -> bytes:
+    """4 Werte (ein Ausgangsblock) -> 8 Byte, signed int16 Little-Endian, x10 skaliert.
+    None -> 0 (unbenutzter Slot)."""
+    if len(values) != 4:
+        raise ValueError("Erwarte genau 4 Werte pro Analog-Ausgangsblock")
+    raw = [0 if v is None else round(v * 10) for v in values]
+    return struct.pack("<4h", *raw)
+
+
+def encode_digital_outputs(values: list) -> bytes:
+    """16 Werte -> 2 Byte Bitmaske, Little-Endian. UNVERIFIZIERT (nur die Analog-Kodierung
+    wurde gegen echte Hardware bestätigt, siehe Modul-Docstring)."""
+    if len(values) != 16:
+        raise ValueError("Erwarte genau 16 Werte für einen Digital-Ausgangsblock")
+    bitmask = 0
+    for i, v in enumerate(values):
+        if v:
+            bitmask |= 1 << i
+    return struct.pack("<H", bitmask)
+
 
 def create_own_node(network: canopen.Network, own_node_id: int, heartbeat_ms: int = DEFAULT_HEARTBEAT_MS) -> canopen.LocalNode:
     """Meldet den Pi als eigenständigen CANopen-Knoten an: canopen.LocalNode beantwortet

@@ -29,6 +29,7 @@ import can
 
 import ha_discovery
 import ta_can_protocol as proto
+import ta_canopen as ta
 from mqtt_common import make_client
 
 CAN_INTERFACE = "can1"
@@ -39,6 +40,13 @@ CAN_VARIABLES_PATH = CONFIG_DIR / "can_variables.json"
 # Interne MQTT-Topics (Glue zwischen Orchestrator und CAN-Node, gleicher Broker)
 TOPIC_TX_VALUE = "internal/can/tx"          # Orchestrator -> CAN-Node: aktueller Wert für einen tx-Kanal
 TOPIC_RX_SETREQUEST = "internal/can/rx_set"  # CAN-Node -> Orchestrator: UVR fordert Set an
+
+
+def _chunk4(items: list) -> list:
+    """Teilt eine Liste in Blöcke zu je 4 auf (mit None aufgefüllt), max. 4 Blöcke
+    (16 Analog-Ausgänge gesamt, siehe ta_canopen.ANALOG_OUTPUT_COB_ID_BASES)."""
+    padded = (list(items) + [None] * 16)[:16]
+    return [padded[i : i + 4] for i in range(0, 16, 4)]
 
 
 def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
@@ -153,6 +161,29 @@ def main() -> None:
             data = proto.encode_digital_block(values)
             bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
+    ta_outputs = mapping.get("ta_network_outputs")
+
+    def send_ta_network_outputs():
+        """Sendet Werte als TA-Netzwerkausgänge (bestätigtes Schema, siehe ta_canopen.py),
+        an eine auf der UVR konfigurierte 'CAN-Analogeingang'/'CAN-Digitaleingang'-Zuordnung
+        mit Knotennummer = own_node_number (dieselbe Einstellung wie auf der CAN-Einstellungen-Seite)."""
+        if not ta_outputs:
+            return
+        own_node_id = mapping.get("own_node_number", 1)
+        for block_index, channels in enumerate(_chunk4(ta_outputs.get("analog", []))):
+            values = [tx_values.get(ch) if ch else None for ch in channels]
+            if all(v is None for v in values):
+                continue
+            data = ta.encode_analog_outputs(values)
+            cob_id = ta.ANALOG_OUTPUT_COB_ID_BASES[block_index] | own_node_id
+            bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+        digital_channels = (ta_outputs.get("digital", []) + [None] * 16)[:16]
+        if any(ch for ch in digital_channels):
+            values = [bool(tx_values.get(ch)) if ch else None for ch in digital_channels]
+            data = ta.encode_digital_outputs(values)
+            cob_id = ta.DIGITAL_OUTPUT_COB_ID_BASE | own_node_id
+            bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+
     def on_connect(mqtt_client, userdata, flags, rc):
         mqtt_client.subscribe(f"{TOPIC_TX_VALUE}/#")
         mqtt_client.subscribe(f"{uvr_cmd_topic_prefix}/#")
@@ -176,6 +207,7 @@ def main() -> None:
             mqtt_client.publish(f"{uvr_topic_prefix}/{channel}", payload, retain=True)
         send_tx_analog_blocks()
         send_tx_digital_blocks()
+        send_ta_network_outputs()
 
     client.on_connect = on_connect
     client.on_message = on_message
