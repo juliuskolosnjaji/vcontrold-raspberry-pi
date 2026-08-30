@@ -102,12 +102,16 @@ def run_vclient_batch(commands: list[str], template_path: str) -> list[str | Non
     Verbindung pro Variable), via vclient -t (Template-Modus, siehe make_batch_template).
     Gibt bei Erfolg genau len(commands) Werte zurück, bei Fehler eine gleich lange Liste
     aus None (damit der Aufrufer jede Variable einzeln als fehlgeschlagen loggen kann)."""
+    # Batching spart nur den TCP-Verbindungsaufbau, nicht die eigentliche KW-Protokoll-Zeit
+    # pro Kommando (Optolink ist seriell, jedes Get braucht spürbar Zeit) -- Timeout muss
+    # daher mit der Anzahl Kommandos wachsen, sonst schlagen größere Zyklen grundlos fehl.
+    timeout = max(15, 5 * len(commands))
     try:
         result = subprocess.run(
             ["vclient", "-h", VCLIENT_HOST, "-p", VCLIENT_PORT, "-c", ",".join(commands), "-t", template_path],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=timeout,
             check=True,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
