@@ -13,7 +13,17 @@
      {{ total_slots }} Analog-Slots verteilen sich deshalb auf {{ total_slots // 4 }} CAN-IDs
      (Slots 1-4, 5-8, 9-12, 13-16). Bei Digital passen alle {{ total_slots }} Bits in einen
      einzigen Frame, daher nur eine CAN-ID pro Spalte.</p>
+  <p><strong>Senden-Slots:</strong> Freitextfeld mit Vorschlägen aus <code>vito.xml</code>-Variablen
+     (siehe <a href="{{ url_for('variables_page') }}">Variablen</a>-Seite) — du kannst aber auch
+     einen beliebigen anderen Namen eintragen, falls der Wert nicht aus vcontrold kommt (z.B. von
+     Home Assistant direkt auf <code>internal/can/tx/&lt;name&gt;</code> published).</p>
 </div>
+
+<datalist id="tx-subtopics">
+  {% for s in available_subtopics %}
+  <option value="{{ s }}"></option>
+  {% endfor %}
+</datalist>
 
 <form method="post">
   <div class="card">
@@ -52,12 +62,8 @@
           {% endfor %}
         </select>
         {% else %}
-        <select name="{{ col.key }}_slot_value_{{ loop.index0 }}">
-          <option value="" {% if not slot.value %}selected{% endif %}>— unbelegt —</option>
-          {% for s in available_subtopics %}
-          <option value="{{ s }}" {% if slot.value == s %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
+        <input type="text" name="{{ col.key }}_slot_value_{{ loop.index0 }}" value="{{ slot.value }}"
+               list="tx-subtopics" placeholder="Variable oder freier Name">
         {% endif %}
       </div>
       {% endfor %}
