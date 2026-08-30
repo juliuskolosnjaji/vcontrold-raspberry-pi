@@ -89,6 +89,7 @@ class Orchestrator:
             COMMAND_MAP_PATH, "Kopiere config/command_map.json.example dorthin und lege settable Variablen fest."
         )
         self.variables = vito_variables.load_variables()
+        self._log_loaded_cycles()
         self.client, env = make_client("orchestrator")
         self.topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
         self.topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
@@ -98,6 +99,21 @@ class Orchestrator:
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+
+    def _log_loaded_cycles(self) -> None:
+        """Zeigt beim Start (siehe Diagnose-Seite/journalctl), welche Variablen aus
+        config/read_cycles.json geladen wurden, mit welchem Zyklus/Intervall, und ob
+        dafür überhaupt ein Getter in vito.xml existiert."""
+        print(f"{len(self.read_cycles)} Zyklus/Zyklen aus {READ_CYCLES_PATH} geladen:")
+        for name, cycle in self.read_cycles.items():
+            interval = cycle.get("interval_seconds", "?")
+            var_names = cycle.get("variables", [])
+            for var_name in var_names:
+                variable = self.variables.get(var_name)
+                status = "OK" if variable and variable.get("get") else "FEHLER: kein Getter in vito.xml"
+                print(f"  Zyklus '{name}' (alle {interval}s): {var_name} -> {status}")
+            if not var_names:
+                print(f"  Zyklus '{name}' (alle {interval}s): keine Variablen konfiguriert")
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
@@ -161,11 +177,13 @@ class Orchestrator:
             for var_name in cycle["variables"]:
                 variable = self.variables.get(var_name)
                 if variable is None or not variable.get("get"):
-                    print(f"Keine Getter-Definition für '{var_name}' in vito.xml gefunden", file=sys.stderr)
+                    print(f"Zyklus '{name}': Keine Getter-Definition für '{var_name}' in vito.xml gefunden", file=sys.stderr)
                     continue
                 value = run_vclient(variable["get"])
                 if value is None:
+                    print(f"Zyklus '{name}': '{var_name}' fehlgeschlagen (kein Wert von vclient)", file=sys.stderr)
                     continue
+                print(f"Zyklus '{name}': '{var_name}' = {value}")
                 self.publish_value(var_name, value)
 
     def run_forever(self) -> None:
