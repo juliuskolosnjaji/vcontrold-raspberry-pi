@@ -1,0 +1,48 @@
+# Beispiel-Einträge für Home Assistant configuration.yaml
+# Passe Topics an die Werte aus config/mqtt.env (MQTT_TOPIC_HEIZUNG / MQTT_TOPIC_UVR) an.
+
+mqtt:
+  sensor:
+    - name: "Außentemperatur"
+      state_topic: "heizung/aussentemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "Vorlauftemperatur"
+      state_topic: "heizung/vorlauftemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "Kesseltemperatur"
+      state_topic: "heizung/kesseltemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "UVR Kollektortemperatur"
+      state_topic: "uvr/kollektortemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+  number:
+    - name: "Solltemperatur Normal"
+      command_topic: "heizung/cmd/solltemperatur_normal"
+      state_topic: "heizung/solltemperatur_normal"
+      min: 10
+      max: 28
+      step: 0.5
+      unit_of_measurement: "°C"
+
+  switch:
+    - name: "UVR Pumpe"
+      command_topic: "uvr/cmd/pumpe_an_aus"
+      state_topic: "uvr/pumpe_status"
+      payload_on: "ON"
+      payload_off: "OFF"
+
+# Alternative: MQTT Discovery
+#
+# Statt statischer YAML-Entities kannst du die Python-Skripte so erweitern, dass sie
+# beim Start einmalig Discovery-Konfigurationen auf
+#   homeassistant/sensor/<object_id>/config
+# published (Home Assistant legt die Entities dann automatisch an). Für den Einstieg
+# ist die statische YAML-Variante oben aber einfacher zu debuggen.

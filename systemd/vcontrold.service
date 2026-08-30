@@ -1,0 +1,11 @@
+[Unit]
+Description=vcontrold - Viessmann Optolink daemon
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/sbin/vcontrold -x /etc/vcontrold.xml
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

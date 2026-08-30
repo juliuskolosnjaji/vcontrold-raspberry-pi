@@ -1,0 +1,5 @@
+config/mqtt.env
+config/command_map.json
+ui/ui.env
+__pycache__/
+*.pyc

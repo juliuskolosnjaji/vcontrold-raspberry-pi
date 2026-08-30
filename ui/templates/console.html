@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Konsole - vcontrold UI{% endblock %}
+{% block content %}
+<h1>Kommando-Konsole</h1>
+
+<div class="card">
+  <form method="post" id="console-form" onsubmit="return confirmIfSet();">
+    <label for="known-command">Bekannte Getter/Setter (aus Geräte-XML)</label>
+    <select id="known-command" onchange="document.getElementById('command').value = this.value;">
+      <option value="">-- auswählen --</option>
+      {% if commands['get'] %}
+      <optgroup label="Getter">
+        {% for c in commands['get'] %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+      {% if commands['set'] %}
+      <optgroup label="Setter (Argument anhängen, z.B. 'setSolltempNormal 21.5')">
+        {% for c in commands['set'] %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    </select>
+    {% if not commands['get'] and not commands['set'] %}
+    <p><em>Keine Kommandos gefunden — DEVICE_XML_PATH in ui.env setzen (siehe Dashboard).</em></p>
+    {% endif %}
+
+    <label for="command">vclient-Kommando (frei editierbar)</label>
+    <input type="text" id="command" name="command" value="{{ executed_command }}" placeholder="z.B. getTempAussen oder setSolltempNormal 21.5">
+
+    <label><input type="checkbox" id="confirmed" name="confirmed" value="1" style="width:auto;display:inline-block;"> Ich bestätige diesen Befehl (nötig bei set-Befehlen)</label>
+
+    <button type="submit">Ausführen</button>
+  </form>
+</div>
+
+{% if result %}
+<div class="card">
+  <h2>Ergebnis</h2>
+  <p class="{{ 'message-ok' if result.ok else 'message-error' }}">{{ 'OK' if result.ok else 'Fehler' }}</p>
+  <pre>{{ result.output }}</pre>
+</div>
+{% endif %}
+
+<script>
+function confirmIfSet() {
+  const cmd = document.getElementById('command').value.trim();
+  const confirmedBox = document.getElementById('confirmed');
+  if (cmd.toLowerCase().startsWith('set') && !confirmedBox.checked) {
+    return confirm('Set-Befehl "' + cmd + '" wirklich an die Heizung senden?') && (confirmedBox.checked = true);
+  }
+  return true;
+}
+</script>
+{% endblock %}

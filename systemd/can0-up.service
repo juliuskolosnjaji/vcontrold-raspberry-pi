@@ -1,0 +1,12 @@
+[Unit]
+Description=Bring up can0 interface for PiCAN2/3 HAT
+After=network.target
+Before=can-to-mqtt.service mqtt-to-can.service
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip link set can0 up type can bitrate 20000
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

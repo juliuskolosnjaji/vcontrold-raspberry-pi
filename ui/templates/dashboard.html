@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - vcontrold UI{% endblock %}
+{% block content %}
+<h1>vcontrold Dashboard</h1>
+
+<div class="card">
+  <h2>Konfiguration</h2>
+  <table>
+    <tr><th>vclient-Ziel</th><td>{{ cfg.vclient_host }}:{{ cfg.vclient_port }}</td></tr>
+    <tr><th>Geräte-XML (für Konsole)</th><td>{{ cfg.device_xml or "nicht gesetzt (siehe ui.env)" }}</td></tr>
+    <tr><th>vcontrold-Hauptconfig</th><td>{{ cfg.vcontrold_main_xml }}</td></tr>
+    <tr><th>CAN-Interface</th><td>{{ cfg.can_interface }}</td></tr>
+    <tr><th>MQTT-Config</th><td>{{ "vorhanden (config/mqtt.env)" if mqtt_configured else "fehlt — siehe README" }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Schnellzugriff</h2>
+  <p><a href="{{ url_for('console') }}">→ Kommando-Konsole öffnen</a></p>
+  <p><a href="{{ url_for('diagnostics_page') }}">→ Diagnose ansehen</a></p>
+  <p><a href="{{ url_for('config_import') }}">→ Geräte-Config importieren</a></p>
+  <p><a href="{{ url_for('can_sniffer_page') }}">→ CAN-Bus mitschneiden</a></p>
+</div>
+{% endblock %}

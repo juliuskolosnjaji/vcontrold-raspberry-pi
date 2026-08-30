@@ -1,0 +1,9 @@
+[Unit]
+Description=vcontrold -> MQTT (einmaliger Durchlauf, wird vom Timer getriggert)
+After=network.target vcontrold.service
+Requires=vcontrold.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__INSTALL_DIR__/scripts
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/vcontrold_to_mqtt.py

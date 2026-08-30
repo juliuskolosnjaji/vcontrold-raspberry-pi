@@ -1,0 +1,16 @@
+[Unit]
+Description=vcontrold Web-UI
+After=network.target vcontrold.service
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__/ui
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/ui/app.py
+Restart=on-failure
+RestartSec=5
+# Läuft als root, da Config-Import nach /etc/vcontrold.xml schreibt und
+# systemctl restart vcontrold ausführt. Absichern: nur im LAN erreichbar
+# machen (Router/Firewall) und starkes UI_PASSWORD in ui/ui.env setzen.
+
+[Install]
+WantedBy=multi-user.target

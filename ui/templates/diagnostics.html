@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Diagnose - vcontrold UI{% endblock %}
+{% block content %}
+<h1>Diagnose</h1>
+
+<div class="card">
+  <h2>Dienste</h2>
+  <table>
+    <tr><th>Dienst</th><th>Status</th><th>Log</th></tr>
+    {% for s in services %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td class="status-{{ s.state }}">{{ s.state }}</td>
+      <td><button onclick="loadLog('{{ s.name }}')">Log anzeigen</button></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <pre id="log-output" style="display:none;"></pre>
+</div>
+
+<div class="card">
+  <h2>MQTT-Verbindung</h2>
+  {% if mqtt_status %}
+  <p class="{{ 'message-ok' if mqtt_status.ok else 'message-error' }}">
+    {{ 'Verbunden' if mqtt_status.ok else 'Fehler' }} ({{ mqtt_status.detail }})
+  </p>
+  {% else %}
+  <p>config/mqtt.env nicht gefunden — siehe README.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>CAN-Interface ({{ cfg.can_interface }})</h2>
+  <pre>{{ can_status }}</pre>
+</div>
+
+<script>
+function loadLog(service) {
+  fetch('/diagnostics/log/' + encodeURIComponent(service))
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('log-output');
+      el.style.display = 'block';
+      el.textContent = data.log || data.error;
+    });
+}
+</script>
+{% endblock %}

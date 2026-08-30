@@ -1,0 +1,14 @@
+[Unit]
+Description=MQTT -> CAN (UVR) command bridge
+After=network.target can0-up.service
+Requires=can0-up.service
+
+[Service]
+Type=simple
+WorkingDirectory=__INSTALL_DIR__/scripts
+ExecStart=__INSTALL_DIR__/venv/bin/python3 __INSTALL_DIR__/scripts/mqtt_to_can.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

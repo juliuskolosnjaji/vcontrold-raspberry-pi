@@ -1,0 +1,5 @@
+{
+  "solltemperatur_normal": "setSolltempNormal",
+  "solltemperatur_reduziert": "setSolltempReduziert",
+  "betriebsart": "setBetriebsart"
+}
