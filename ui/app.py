@@ -9,6 +9,7 @@ Sicherheitshinweis: Diese UI kann Schreibbefehle an die Heizung senden. Nicht oh
 Basic-Auth (siehe ui.env) und nicht ungeschützt im Internet exponieren.
 """
 import datetime
+import json
 import pathlib
 import shutil
 import sys
@@ -21,12 +22,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts
 
 import can_sniffer
 import diagnostics
+import ta_can_protocol as proto
 import vclient_wrapper
 import xml_parser
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI_ENV_PATH = pathlib.Path(__file__).resolve().parent / "ui.env"
 MQTT_ENV_PATH = PROJECT_ROOT / "config" / "mqtt.env"
+CAN_MAPPING_PATH = PROJECT_ROOT / "config" / "can_mapping.json"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
@@ -308,6 +311,231 @@ def settings():
         message=message,
         message_ok=message_ok,
         test_result=test_result,
+    )
+
+
+CAN_BLOCK_ROWS = 4  # Anzahl editierbarer Zeilen pro Block-Kategorie (letzte leere Zeile = "neu hinzufügen")
+
+CAN_BLOCK_CATEGORIES = [
+    ("tx_analog_blocks", "Senden: Analog (Pi → UVR)", True, False),
+    ("tx_digital_blocks", "Senden: Digital (Pi → UVR)", False, False),
+    ("rx_analog_blocks", "Empfangen: Analog (UVR → Pi)", True, True),
+    ("rx_digital_blocks", "Empfangen: Digital (UVR → Pi)", False, True),
+]
+
+
+def load_can_mapping() -> dict:
+    if not CAN_MAPPING_PATH.exists():
+        return {"bitrate": proto.DEFAULT_BITRATE, "own_node_number": 1}
+    return json.loads(CAN_MAPPING_PATH.read_text())
+
+
+def channels_to_text(channels: list) -> str:
+    parts = []
+    for c in channels:
+        if c is None:
+            parts.append("")
+        elif isinstance(c, dict):
+            parts.append(f"{c['topic']}>{c.get('forward_as_set', '')}")
+        else:
+            parts.append(str(c))
+    return ", ".join(parts)
+
+
+def parse_channels_text(raw: str, expected_len: int, allow_forward: bool) -> list:
+    parts = [p.strip() for p in raw.split(",")]
+    parts = (parts + [""] * expected_len)[:expected_len]
+    result = []
+    for p in parts:
+        if not p:
+            result.append(None)
+        elif allow_forward and ">" in p:
+            topic, key = p.split(">", 1)
+            result.append({"topic": topic.strip(), "forward_as_set": key.strip()})
+        else:
+            result.append(p)
+    return result
+
+
+def build_rows_for_template(blocks: list, is_analog: bool) -> list:
+    rows = []
+    for block in blocks:
+        rows.append(
+            {
+                "can_id": block.get("can_id", ""),
+                "value_bytes": block.get("value_bytes", 2),
+                "channels_text": channels_to_text(block.get("channels", [])),
+            }
+        )
+    while len(rows) < CAN_BLOCK_ROWS:
+        rows.append({"can_id": "", "value_bytes": 2, "channels_text": ""})
+    return rows[:CAN_BLOCK_ROWS] if len(rows) > CAN_BLOCK_ROWS else rows
+
+
+@app.route("/can-settings", methods=["GET", "POST"])
+def can_settings():
+    message = None
+    message_ok = None
+    mapping = load_can_mapping()
+
+    if request.method == "POST":
+        new_mapping = {
+            "bitrate": int(request.form.get("bitrate", proto.DEFAULT_BITRATE) or proto.DEFAULT_BITRATE),
+            "own_node_number": int(request.form.get("own_node_number", 1) or 1),
+        }
+        errors = []
+
+        for key, _label, is_analog, allow_forward in CAN_BLOCK_CATEGORIES:
+            blocks = []
+            for i in range(CAN_BLOCK_ROWS):
+                can_id_raw = request.form.get(f"{key}_can_id_{i}", "").strip()
+                if not can_id_raw:
+                    continue
+                try:
+                    can_id_int = int(can_id_raw, 0)
+                except ValueError:
+                    errors.append(f"{key} Zeile {i + 1}: ungültige CAN-ID '{can_id_raw}'")
+                    continue
+
+                block = {"can_id": hex(can_id_int)}
+                if is_analog:
+                    value_bytes = int(request.form.get(f"{key}_value_bytes_{i}", 2))
+                    block["value_bytes"] = value_bytes
+                    expected_len = proto.analog_values_per_block(value_bytes)
+                else:
+                    expected_len = proto.DIGITAL_VALUES_PER_BLOCK
+
+                channels_raw = request.form.get(f"{key}_channels_{i}", "")
+                channels = parse_channels_text(channels_raw, expected_len, allow_forward)
+                block["channels"] = channels
+                blocks.append(block)
+            new_mapping[key] = blocks
+
+        if errors:
+            message, message_ok = " / ".join(errors), False
+            mapping = new_mapping  # editierte (fehlerhafte) Werte im Formular zeigen
+        else:
+            CAN_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
+            CAN_MAPPING_PATH.write_text(json.dumps(new_mapping, indent=2, ensure_ascii=False) + "\n")
+            mapping = new_mapping
+
+            status = diagnostics.service_status("can-node")
+            if status["state"] == "active":
+                restart = diagnostics.restart_service("can-node")
+                if restart["ok"]:
+                    message, message_ok = "Gespeichert, can-node neu gestartet.", True
+                else:
+                    message, message_ok = f"Gespeichert, aber Neustart fehlgeschlagen: {restart['detail']}", False
+            else:
+                message, message_ok = "Gespeichert. can-node läuft nicht, wurde nicht neu gestartet.", True
+
+    categories = []
+    for key, label, is_analog, allow_forward in CAN_BLOCK_CATEGORIES:
+        categories.append(
+            {
+                "key": key,
+                "label": label,
+                "is_analog": is_analog,
+                "allow_forward": allow_forward,
+                "rows": build_rows_for_template(mapping.get(key, []), is_analog),
+            }
+        )
+
+    return render_template(
+        "can_settings.html",
+        bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
+        own_node_number=mapping.get("own_node_number", 1),
+        categories=categories,
+        num_rows=range(CAN_BLOCK_ROWS),
+        message=message,
+        message_ok=message_ok,
+    )
+
+
+READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
+CYCLE_ROWS = 4  # Anzahl editierbarer Zyklus-Zeilen (letzte leere Zeile = "neu hinzufügen")
+
+
+def load_read_cycles() -> dict:
+    if not READ_CYCLES_PATH.exists():
+        return {}
+    return json.loads(READ_CYCLES_PATH.read_text())
+
+
+def commands_to_text(commands: dict) -> str:
+    return "\n".join(f"{cmd}={topic}" for cmd, topic in commands.items())
+
+
+def parse_commands_text(text: str) -> dict:
+    result = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        cmd, topic = line.split("=", 1)
+        cmd, topic = cmd.strip(), topic.strip()
+        if cmd and topic:
+            result[cmd] = topic
+    return result
+
+
+@app.route("/read-cycles-settings", methods=["GET", "POST"])
+def read_cycles_settings():
+    message = None
+    message_ok = None
+    cycles = load_read_cycles()
+
+    if request.method == "POST":
+        new_cycles = {}
+        errors = []
+        for i in range(CYCLE_ROWS):
+            name = request.form.get(f"cycle_name_{i}", "").strip()
+            if not name:
+                continue
+            try:
+                interval = int(request.form.get(f"cycle_interval_{i}", "0"))
+                if interval <= 0:
+                    raise ValueError
+            except ValueError:
+                errors.append(f"Zyklus '{name}': ungültiges Intervall")
+                continue
+            commands = parse_commands_text(request.form.get(f"cycle_commands_{i}", ""))
+            if not commands:
+                errors.append(f"Zyklus '{name}': keine gültigen Kommandos (Format: getXXX=subtopic)")
+                continue
+            new_cycles[name] = {"interval_seconds": interval, "commands": commands}
+
+        if errors:
+            message, message_ok = " / ".join(errors), False
+        else:
+            READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            cycles = new_cycles
+
+            status = diagnostics.service_status("orchestrator")
+            if status["state"] == "active":
+                restart = diagnostics.restart_service("orchestrator")
+                if restart["ok"]:
+                    message, message_ok = "Gespeichert, orchestrator neu gestartet.", True
+                else:
+                    message, message_ok = f"Gespeichert, aber Neustart fehlgeschlagen: {restart['detail']}", False
+            else:
+                message, message_ok = "Gespeichert. orchestrator läuft nicht, wurde nicht neu gestartet.", True
+
+    rows = [
+        {"name": name, "interval_seconds": cycle["interval_seconds"], "commands_text": commands_to_text(cycle["commands"])}
+        for name, cycle in cycles.items()
+    ]
+    while len(rows) < CYCLE_ROWS:
+        rows.append({"name": "", "interval_seconds": 30, "commands_text": ""})
+    rows = rows[:CYCLE_ROWS] if len(rows) > CYCLE_ROWS else rows
+
+    return render_template(
+        "read_cycles_settings.html",
+        rows=rows,
+        num_rows=range(CYCLE_ROWS),
+        message=message,
+        message_ok=message_ok,
     )
 
 

@@ -1,11 +1,13 @@
 {
-  "_hinweis": "can_id-Werte sind Platzhalter (0x0). Per CAN-Sniffer (Web-UI) ermitteln und hier eintragen, bevor can_node.py produktiv läuft. Siehe README Abschnitt 3.",
+  "_hinweis": "can_id-Werte sind Platzhalter (0x0). Per CAN-Sniffer (Web-UI) ermitteln und hier eintragen -- am einfachsten über die 'CAN-Einstellungen'-Seite der Web-UI, bevor can_node.py produktiv läuft. Siehe README Abschnitt 3.",
 
+  "bitrate": 50000,
   "own_node_number": 60,
 
   "tx_analog_blocks": [
     {
       "can_id": "0x0",
+      "value_bytes": 2,
       "channels": ["aussentemperatur", "kesseltemperatur_ist", "vorlauftemperatur", "warmwassertemperatur"]
     }
   ],
@@ -20,6 +22,7 @@
   "rx_analog_blocks": [
     {
       "can_id": "0x0",
+      "value_bytes": 2,
       "channels": ["uvr_kollektortemperatur", "uvr_speichertemperatur", null, null]
     }
   ],

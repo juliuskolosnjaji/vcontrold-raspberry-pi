@@ -1,5 +1,7 @@
 config/mqtt.env
 config/command_map.json
+config/read_cycles.json
+config/can_mapping.json
 ui/ui.env
 __pycache__/
 *.pyc

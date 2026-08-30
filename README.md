@@ -149,7 +149,7 @@ dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13
 
 Das sind die Werte für die **Standardverlötung** des Boards (INT_0 auf GPIO22, INT_1 auf GPIO13). `spi1-1` wird `can0`, `spi1-2` wird `can1`. Falls die Lötbrücken auf deinem Board umgesetzt wurden (siehe Wiki-Seite), die `interrupt=`-Werte entsprechend anpassen. `install.sh` schreibt diese Zeilen automatisch in die Boot-Config.
 
-CAN-Interface hochfahren (Baudrate der UVR i.d.R. 20 kBit/s — unbedingt in der UVR-Konfiguration nachsehen, TA nutzt üblicherweise 20 kBit/s für den DL/CAN-Bus zwischen Reglern). `install.sh` installiert und startet `can0-up.service` bereits automatisch; manuell:
+CAN-Interface hochfahren (Standard-Bus-Geschwindigkeit der UVR16x2 ist **50 kBit/s** laut Handbuch — falls deine UVR-Konfiguration eine andere Bitrate zeigt, in den CAN-Einstellungen der Web-UI anpassen, siehe Abschnitt 3.1). `install.sh` installiert und startet `can0-up.service` bereits automatisch; manuell:
 
 ```bash
 sudo cp systemd/can0-up.service /etc/systemd/system/
@@ -195,6 +195,8 @@ Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 - **Config-Import**: Geräte-XML hochladen, Backup der bisherigen `/etc/vcontrold.xml` wird automatisch angelegt, danach `systemctl restart vcontrold`.
 - **Config-Editor**: `vcontrold.xml` und `vito.xml` direkt als Text im Browser bearbeiten (z.B. um schnell einen neuen Getter/Setter hinzuzufügen), statt eine Datei hochzuladen. Validiert XML vor dem Speichern, legt Backups an, startet `vcontrold` neu.
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
+- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, und pro Block CAN-ID, Wertgröße (2 oder 4 Byte) und welche Kanäle auf welchem Slot liegen, für Senden und Empfangen getrennt. Speichern startet `can-node` (falls aktiv) automatisch neu.
+- **Read-Zyklen**: `config/read_cycles.json` im Browser bearbeiten — Name, Intervall und Kommando-Liste pro Zyklus, ohne JSON von Hand zu editieren. Speichern startet `orchestrator` (falls aktiv) automatisch neu.
 - **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 

@@ -8,7 +8,7 @@ Type=oneshot
 # Idempotent: falls can0 schon (z.B. manuell) hochgefahren ist, erst runter- und wieder
 # hochfahren, statt mit "Device or resource busy" zu scheitern.
 ExecStartPre=-/sbin/ip link set can0 down
-ExecStart=/sbin/ip link set can0 up type can bitrate 20000
+ExecStart=/sbin/ip link set can0 up type can bitrate 50000
 RemainAfterExit=yes
 
 [Install]

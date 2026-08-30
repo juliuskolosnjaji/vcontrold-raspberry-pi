@@ -19,6 +19,7 @@ befüllt werden (siehe ta_can_protocol.py und README Abschnitt 3 -- CAN-Sniffer)
 """
 import json
 import pathlib
+import subprocess
 import sys
 
 import can
@@ -67,10 +68,24 @@ def load_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
+def configure_interface(interface: str, bitrate: int) -> None:
+    """Setzt die konfigurierte Bitrate, unabhängig davon, was can0-up.service schon gesetzt hat."""
+    subprocess.run(["ip", "link", "set", interface, "down"], check=False)
+    result = subprocess.run(
+        ["ip", "link", "set", interface, "up", "type", "can", "bitrate", str(bitrate)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Konnte {interface} nicht mit Bitrate {bitrate} konfigurieren: {result.stderr}", file=sys.stderr)
+
+
 def main() -> None:
     mapping = load_mapping()
     client, env = make_client("can-node")
     uvr_topic_prefix = env.get("MQTT_TOPIC_UVR", "uvr")
+
+    configure_interface(CAN_INTERFACE, mapping.get("bitrate", proto.DEFAULT_BITRATE))
 
     # Aktueller Wertespeicher für tx-Kanäle (vom Orchestrator zuletzt gemeldete Werte)
     tx_values: dict[str, float] = {}
@@ -81,13 +96,13 @@ def main() -> None:
         print(f"Konnte {CAN_INTERFACE} nicht öffnen: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    rx_analog_by_id = {int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_analog_blocks", [])}
+    rx_analog_by_id = {int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", [])}
     rx_digital_by_id = {int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", [])}
 
     def send_tx_analog_blocks():
         for block in mapping.get("tx_analog_blocks", []):
             values = [tx_values.get(ch) for ch in block["channels"]]
-            data = proto.encode_analog_block(values)
+            data = proto.encode_analog_block(values, value_bytes=block.get("value_bytes", 2))
             bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
     def send_tx_digital_blocks():
@@ -119,9 +134,10 @@ def main() -> None:
     try:
         for msg in bus:
             if msg.arbitration_id in rx_analog_by_id:
-                channels = rx_analog_by_id[msg.arbitration_id]
+                block = rx_analog_by_id[msg.arbitration_id]
+                channels = block["channels"]
                 try:
-                    values = proto.decode_analog_block(msg.data)
+                    values = proto.decode_analog_block(msg.data, value_bytes=block.get("value_bytes", 2))
                 except ValueError as exc:
                     print(f"Decoder-Fehler (analog) für 0x{msg.arbitration_id:x}: {exc}", file=sys.stderr)
                     continue
