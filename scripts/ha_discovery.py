@@ -62,8 +62,6 @@ SENSOR_METADATA = {
 # Kanonischer Name -> {device_class, ...}: als binary_sensor statt nacktem 0/1-Sensor
 # published. Rohwert von vclient ist bereits "0"/"1", passt direkt auf payload_off/on.
 BINARY_SENSOR_METADATA = {
-    "BetriebSpar": {"icon": "mdi:sprout"},
-    "BetriebParty": {"icon": "mdi:music-note"},
     "BrennerStatus": {"device_class": "running"},
     "PumpeStatusZirku": {"device_class": "running"},
     "PumpeStatusHk": {"device_class": "running"},
@@ -108,10 +106,27 @@ def build_binary_sensor_config(key: str, state_topic: str, device: dict = None, 
     return config
 
 
+# Kanonischer Name -> {icon, unit, min, max, step, ...}: Vorgaben für schreibbare
+# Variablen (command_map.json), übernommen aus der früher funktionierenden statischen
+# configuration.yaml. Werden von einem gleichnamigen Feld in command_map.json's
+# "discovery"-Objekt überschrieben, falls dort explizit gesetzt.
+WRITABLE_METADATA = {
+    "Neigung": {"icon": "mdi:chart-bell-curve"},
+    "Niveau": {"icon": "mdi:tune-vertical", "unit": "K"},
+    "TempRaumNorSoll": {"icon": "mdi:thermometer-lines"},
+    "TempRaumRedSoll": {"icon": "mdi:moon-waning-crescent"},
+    "TempRaumPartySoll": {"icon": "mdi:glass-cocktail"},
+    "Betriebsart": {"icon": "mdi:valve-closed"},
+    "BetriebSpar": {"icon": "mdi:leaf"},
+    "BetriebParty": {"icon": "mdi:party-popper"},
+}
+
+
 def build_writable_config(
     key: str, state_topic: str, command_topic: str, discovery_opts: dict, device: dict = None, id_prefix: str = "vcontrold"
 ) -> tuple[str, dict]:
     """Gibt (component, config) zurück, component ist 'number', 'select' oder 'switch'."""
+    discovery_opts = {**WRITABLE_METADATA.get(key, {}), **discovery_opts}
     component = discovery_opts.get("component", "number")
     config = {
         "name": _friendly_name(key),
@@ -120,6 +135,8 @@ def build_writable_config(
         "command_topic": command_topic,
         "device": device or DEVICE_INFO,
     }
+    if "icon" in discovery_opts:
+        config["icon"] = discovery_opts["icon"]
     if component == "number":
         for field in ("min", "max", "step"):
             if field in discovery_opts:
