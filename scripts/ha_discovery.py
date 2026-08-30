@@ -1,0 +1,112 @@
+"""
+Home-Assistant-MQTT-Discovery: erzeugt und published die Config-Nachrichten, mit
+denen Home Assistant Entities automatisch anlegt, statt dass man
+homeassistant/configuration_snippet.yaml von Hand einträgt.
+
+Format: https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery
+Ein Publish nach "<prefix>/<component>/<unique_id>/config" (retained) reicht,
+Home Assistant abonniert das automatisch, sofern MQTT-Discovery aktiv ist
+(Standard-Einstellung).
+
+Metadaten (Einheit, device_class) sind nur für die bekannten Vitogas-100/V200KW1-
+Datenpunkte hinterlegt (siehe config/device-vitogas100-v200kw1/). Unbekannte
+Subtopics bekommen trotzdem eine Sensor-Entity, nur ohne Einheit/Icon.
+"""
+import json
+
+DEVICE_INFO = {
+    "identifiers": ["vcontrold_raspberry_pi"],
+    "name": "Vitogas 100 (vcontrold)",
+    "manufacturer": "Viessmann",
+    "model": "Vitotronic V200KW1",
+}
+
+# subtopic -> {unit_of_measurement, device_class} für hübschere Sensor-Darstellung.
+SENSOR_METADATA = {
+    "aussentemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "kesseltemperatur_ist": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "kesseltemperatur_soll": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "warmwassertemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "vorlauftemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "ruecklauftemperatur": {"unit_of_measurement": "°C", "device_class": "temperature"},
+    "brennerstunden_stufe1": {"unit_of_measurement": "h"},
+    "brennerstunden_stufe2": {"unit_of_measurement": "h"},
+}
+
+
+def _friendly_name(key: str) -> str:
+    return key.replace("_", " ").strip().capitalize()
+
+
+def _unique_id(key: str) -> str:
+    return f"vcontrold_{key}"
+
+
+def build_sensor_config(key: str, state_topic: str) -> dict:
+    config = {
+        "name": _friendly_name(key),
+        "unique_id": _unique_id(key),
+        "state_topic": state_topic,
+        "device": DEVICE_INFO,
+    }
+    config.update(SENSOR_METADATA.get(key, {}))
+    return config
+
+
+def build_writable_config(key: str, state_topic: str, command_topic: str, discovery_opts: dict) -> tuple[str, dict]:
+    """Gibt (component, config) zurück, component ist 'number' oder 'select'."""
+    component = discovery_opts.get("component", "number")
+    config = {
+        "name": _friendly_name(key),
+        "unique_id": _unique_id(key),
+        "state_topic": state_topic,
+        "command_topic": command_topic,
+        "device": DEVICE_INFO,
+    }
+    if component == "number":
+        for field in ("min", "max", "step"):
+            if field in discovery_opts:
+                config[field] = discovery_opts[field]
+        if "unit" in discovery_opts:
+            config["unit_of_measurement"] = discovery_opts["unit"]
+    elif component == "select":
+        config["options"] = discovery_opts.get("options", [])
+    return component, config
+
+
+def publish_discovery(
+    client,
+    discovery_prefix: str,
+    read_cycles: dict,
+    command_map: dict,
+    topic_heizung: str,
+    topic_cmd_heizung: str,
+) -> None:
+    # Alle Subtopics aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
+    all_subtopics = set()
+    for cycle in read_cycles.values():
+        all_subtopics.update(cycle.get("commands", {}).values())
+
+    published = set()
+
+    # Schreibbare Datenpunkte mit expliziter Discovery-Konfiguration zuerst (number/select),
+    # damit sie nicht zusätzlich als reiner Sensor doppelt angelegt werden.
+    for key, mapping in command_map.items():
+        discovery_opts = mapping.get("discovery")
+        if not discovery_opts:
+            continue
+        component, config = build_writable_config(
+            key,
+            state_topic=f"{topic_heizung}/{key}",
+            command_topic=f"{topic_cmd_heizung}/{key}",
+            discovery_opts=discovery_opts,
+        )
+        topic = f"{discovery_prefix}/{component}/{_unique_id(key)}/config"
+        client.publish(topic, json.dumps(config), retain=True)
+        published.add(key)
+
+    # Alle übrigen Read-Zyklen-Subtopics als reine Sensoren.
+    for key in all_subtopics - published:
+        config = build_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
+        topic = f"{discovery_prefix}/sensor/{_unique_id(key)}/config"
+        client.publish(topic, json.dumps(config), retain=True)

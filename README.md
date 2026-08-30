@@ -185,7 +185,22 @@ sudo systemctl status can-node
 
 ## 4. Home Assistant einbinden
 
-`homeassistant/configuration_snippet.yaml` enthält Beispiel-`mqtt: sensor:` und `mqtt: number:`/`climate:`-Einträge für die veröffentlichten Topics. In `configuration.yaml` von Home Assistant einbinden oder per MQTT-Discovery automatisch erkennen lassen (Discovery-Variante ist im Snippet als Kommentar skizziert).
+**Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch
+Discovery-Konfigurationen für alle Datenpunkte aus `read_cycles.json` (als Sensoren) und alle
+Set-fähigen Einträge aus `command_map.json`, die einen `"discovery"`-Block haben (als Number/Select-
+Entities, siehe `config/command_map.json.example`). Home Assistant legt die Entities dann von selbst
+an, gruppiert unter einem gemeinsamen Gerät "Vitogas 100 (vcontrold)" — kein manuelles Editieren von
+`configuration.yaml` nötig. Voraussetzung: MQTT-Discovery ist in der Home-Assistant-MQTT-Integration
+aktiviert (Standardeinstellung) und `MQTT_DISCOVERY_PREFIX` in `config/mqtt.env` stimmt mit dem dort
+konfigurierten Präfix überein (`homeassistant` bei beiden ist der Standard). Deaktivieren:
+`MQTT_DISCOVERY_ENABLED=false` in `config/mqtt.env`.
+
+Um einem weiteren Datenpunkt eine Number/Select-Entity zu geben, in `config/command_map.json` einen
+`"discovery"`-Block ergänzen (`{"component": "number", "unit": "...", "min": ..., "max": ..., "step": ...}`
+oder `{"component": "select", "options": [...]}`) und `orchestrator` neu starten.
+
+**Alternativ manuell:** `homeassistant/configuration_snippet.yaml` enthält dieselben Entities als
+statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
 
 ## 5. Web-UI (Konsole, Config-Import, MQTT-Einstellungen, Diagnose, CAN-Sniffer)
 

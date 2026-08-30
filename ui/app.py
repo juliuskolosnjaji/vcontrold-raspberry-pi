@@ -168,6 +168,8 @@ MQTT_FIELDS = [
     ("MQTT_TOPIC_HEIZUNG", "Topic-Präfix Heizung", True),
     ("MQTT_TOPIC_UVR", "Topic-Präfix UVR", True),
     ("MQTT_TOPIC_CMD_HEIZUNG", "Topic-Präfix Heizungs-Commands", True),
+    ("MQTT_DISCOVERY_ENABLED", "HA-Discovery aktiv (true/false)", True),
+    ("MQTT_DISCOVERY_PREFIX", "HA-Discovery-Präfix", True),
 ]
 
 # Dienste, die mqtt.env nutzen und nach einer Änderung neu gestartet werden sollten

@@ -29,6 +29,7 @@ import subprocess
 import sys
 import time
 
+import ha_discovery
 from mqtt_common import make_client
 
 VCLIENT_HOST = "localhost"
@@ -75,6 +76,8 @@ class Orchestrator:
         self.client, env = make_client("orchestrator")
         self.topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
         self.topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
+        self.discovery_enabled = env.get("MQTT_DISCOVERY_ENABLED", "true").lower() not in ("false", "0", "no")
+        self.discovery_prefix = env.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
         self.next_due = {name: 0.0 for name in self.read_cycles}
 
         self.client.on_connect = self._on_connect
@@ -84,6 +87,16 @@ class Orchestrator:
         client.subscribe(f"{self.topic_cmd_heizung}/#")
         client.subscribe(f"{TOPIC_RX_SETREQUEST}/#")
         print(f"Abonniert: {self.topic_cmd_heizung}/# und {TOPIC_RX_SETREQUEST}/#")
+        if self.discovery_enabled:
+            ha_discovery.publish_discovery(
+                client,
+                self.discovery_prefix,
+                self.read_cycles,
+                self.command_map,
+                self.topic_heizung,
+                self.topic_cmd_heizung,
+            )
+            print(f"MQTT-Discovery published (Prefix: {self.discovery_prefix})")
 
     def _on_message(self, client, userdata, msg):
         key = msg.topic.rsplit("/", 1)[-1]
