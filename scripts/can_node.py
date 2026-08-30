@@ -122,6 +122,20 @@ def configure_interface(interface: str, bitrate: int) -> None:
     if result.returncode != 0:
         print(f"Konnte {interface} nicht mit Bitrate {bitrate} konfigurieren: {result.stderr}", file=sys.stderr)
 
+    # Standard-Sendequeue (txqueuelen) ist bei CAN-Interfaces oft sehr klein (z.B. 10). Bei
+    # mehreren fast gleichzeitigen Sends (jede eingehende internal/can/tx-Nachricht löst einen
+    # kompletten Neuversand aller Blöcke aus) plus einem ohnehin stark ausgelasteten Bus
+    # (CMI<->UVR-Dauerverkehr) reicht das nicht -- der Kernel meldet dann ENOBUFS ("No buffer
+    # space available"), siehe README Abschnitt 3.3. Größere Queue puffert den Burst ab, statt
+    # Frames sofort zu verwerfen.
+    result = subprocess.run(
+        ["ip", "link", "set", interface, "txqueuelen", "128"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Konnte txqueuelen für {interface} nicht setzen: {result.stderr}", file=sys.stderr)
+
 
 def main() -> None:
     mapping = load_mapping()
