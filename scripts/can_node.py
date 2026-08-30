@@ -196,12 +196,16 @@ def main() -> None:
             data = ta.encode_analog_outputs(values)
             cob_id = ta.ANALOG_OUTPUT_COB_ID_BASES[block_index] | own_node_id
             bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+            print(f"TA-Netzwerkausgang analog Block {block_index + 1}: {list(zip(channels, values))} "
+                  f"-> COB-ID 0x{cob_id:x} data={data.hex()}")
         digital_channels = (ta_outputs.get("digital", []) + [None] * 16)[:16]
         if any(ch for ch in digital_channels):
             values = [bool(tx_values.get(ch)) if ch else None for ch in digital_channels]
             data = ta.encode_digital_outputs(values)
             cob_id = ta.DIGITAL_OUTPUT_COB_ID_BASE | own_node_id
             bus.send(can.Message(arbitration_id=cob_id, data=data, is_extended_id=False))
+            print(f"TA-Netzwerkausgang digital: {list(zip(digital_channels, values))} "
+                  f"-> COB-ID 0x{cob_id:x} data={data.hex()}")
 
     def on_connect(mqtt_client, userdata, flags, rc):
         mqtt_client.subscribe(f"{TOPIC_TX_VALUE}/#")
