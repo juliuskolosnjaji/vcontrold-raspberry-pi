@@ -5,16 +5,18 @@
 
 <div class="card">
   <p>Konfiguriert <code>config/can_mapping.json</code>: Bitrate, eigene Knoten-Nummer und welche
-     Werte auf welchen CAN-IDs/Slots gesendet bzw. empfangen werden. Die CAN-IDs sind erst nach
-     dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen (siehe README
-     Abschnitt 3) bekannt — bis dahin einfach leer lassen.</p>
-  <p><strong>Warum max. 4 (bzw. 2 bei 4 Byte) Slots pro Block:</strong> ein CAN-Frame hat hart
-     maximal 8 Byte Nutzlast — das ist eine physikalische Grenze des CAN-Protokolls, keine
-     UI-Einschränkung. Für mehr Werte insgesamt einfach eine weitere Zeile mit eigener CAN-ID
-     anlegen (bis zu {{ num_rows|length }} Zeilen pro Kategorie = bis zu {{ num_rows|length * 4 }}
-     Analogwerte bzw. {{ num_rows|length * 16 }} Digitalwerte).</p>
+     Werte auf welchen CAN-Slots gesendet bzw. empfangen werden. Die CAN-IDs sind erst nach dem
+     <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen (siehe README Abschnitt 3)
+     bekannt — bis dahin einfach leer lassen.</p>
+  <p><strong>Warum bei Analog alle 4 Slots eine neue CAN-ID:</strong> ein CAN-Frame hat hart
+     maximal 8 Byte Nutzlast — bei 2 Byte pro Wert passen nur 4 Werte in einen Frame. Die
+     {{ total_slots }} Analog-Slots verteilen sich deshalb auf {{ total_slots // 4 }} CAN-IDs
+     (Slots 1-4, 5-8, 9-12, 13-16). Bei Digital passen alle {{ total_slots }} Bits in einen
+     einzigen Frame, daher nur eine CAN-ID pro Spalte.</p>
+</div>
 
-  <form method="post">
+<form method="post">
+  <div class="card">
     <label for="bitrate">CAN-Bitrate</label>
     <select id="bitrate" name="bitrate">
       {% for rate in [5000, 10000, 20000, 50000, 125000, 250000, 500000] %}
@@ -26,60 +28,47 @@
 
     <label for="own_node_number">Eigene Knoten-Nummer</label>
     <input type="number" id="own_node_number" name="own_node_number" value="{{ own_node_number }}" min="1" max="62">
+  </div>
 
-    {% for cat in categories %}
-    <h2>{{ cat.label }}</h2>
-    {% for i in num_rows %}
-    {% set row = cat.rows[i] %}
-    <div class="can-block {{ 'can-block-inactive' if not row.active }}">
-      <div class="can-block-header">
-        <label class="can-inline">
-          <input type="checkbox" name="{{ cat.key }}_active_{{ i }}" value="1" {% if row.active %}checked{% endif %}>
-          Aktiv
-        </label>
-        <label class="can-inline">CAN-ID
-          <input type="text" name="{{ cat.key }}_can_id_{{ i }}" value="{{ row.can_id }}" placeholder="0x0 (leer = Block unbenutzt)">
-        </label>
-        {% if cat.is_analog %}
-        <label class="can-inline">Wertgröße
-          <select name="{{ cat.key }}_value_bytes_{{ i }}">
-            <option value="2" {% if row.value_bytes == 2 %}selected{% endif %}>2 Byte (4 Slots)</option>
-            <option value="4" {% if row.value_bytes == 4 %}selected{% endif %}>4 Byte (2 Slots)</option>
-          </select>
-        </label>
+  <div class="can-columns">
+    {% for col in columns %}
+    <div class="can-column">
+      <h2>{{ col.label }}</h2>
+      {% for slot in col.slots %}
+      {% if slot.can_id_start %}
+      <div class="can-id-row">
+        <label>CAN-ID (Slots {{ loop.index }}-{{ loop.index + (3 if col.is_analog else 15) }})</label>
+        <input type="text" name="{{ col.key }}_can_id_{{ slot.block_index }}" value="{{ slot.can_id }}" placeholder="0x0 = unbenutzt">
+      </div>
+      {% endif %}
+      <div class="can-slot-row">
+        <span class="can-slot-label">Slot {{ loop.index }}</span>
+        {% if col.allow_forward %}
+        <input type="text" name="{{ col.key }}_slot_topic_{{ loop.index0 }}" value="{{ slot.topic }}" placeholder="uvr_kanalname">
+        <select name="{{ col.key }}_slot_forward_{{ loop.index0 }}">
+          <option value="" {% if not slot.forward %}selected{% endif %}>— keine Weiterleitung —</option>
+          {% for k in available_set_keys %}
+          <option value="{{ k }}" {% if slot.forward == k %}selected{% endif %}>→ {{ k }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <select name="{{ col.key }}_slot_value_{{ loop.index0 }}">
+          <option value="" {% if not slot.value %}selected{% endif %}>— unbelegt —</option>
+          {% for s in available_subtopics %}
+          <option value="{{ s }}" {% if slot.value == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
         {% endif %}
       </div>
-
-      <div class="can-slots">
-        {% for slot in row.slots %}
-        <div class="can-slot">
-          <span class="can-slot-label">Slot {{ loop.index }}</span>
-          {% if cat.allow_forward %}
-          <input type="text" name="{{ cat.key }}_slot_topic_{{ i }}_{{ loop.index0 }}" value="{{ slot.topic }}" placeholder="uvr_kanalname">
-          <select name="{{ cat.key }}_slot_forward_{{ i }}_{{ loop.index0 }}">
-            <option value="" {% if not slot.forward %}selected{% endif %}>— keine Weiterleitung —</option>
-            {% for k in available_set_keys %}
-            <option value="{{ k }}" {% if slot.forward == k %}selected{% endif %}>→ {{ k }}</option>
-            {% endfor %}
-          </select>
-          {% else %}
-          <select name="{{ cat.key }}_slot_value_{{ i }}_{{ loop.index0 }}">
-            <option value="" {% if not slot.value %}selected{% endif %}>— unbelegt —</option>
-            {% for s in available_subtopics %}
-            <option value="{{ s }}" {% if slot.value == s %}selected{% endif %}>{{ s }}</option>
-            {% endfor %}
-          </select>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
+      {% endfor %}
     </div>
     {% endfor %}
-    {% endfor %}
+  </div>
 
+  <div class="card">
     <button type="submit" onclick="return confirm('CAN-Einstellungen speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
-  </form>
-</div>
+  </div>
+</form>
 
 {% if message %}
 <div class="card">
@@ -88,14 +77,20 @@
 {% endif %}
 
 <style>
-  .can-block { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; background: #fafafa; }
-  .can-block-inactive { opacity: 0.55; }
-  .can-block-header { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 0.6rem; }
-  .can-inline { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; margin: 0; }
-  .can-inline input[type=text], .can-inline select { margin-bottom: 0; width: auto; }
-  .can-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.5rem; }
-  .can-slot { display: flex; flex-direction: column; gap: 0.2rem; }
-  .can-slot-label { font-size: 0.75rem; color: #666; font-weight: 600; }
-  .can-slot select, .can-slot input[type=text] { margin-bottom: 0.3rem; }
+  .can-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+  .can-column { background: white; border-radius: 6px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .can-column h2 { margin-top: 0; font-size: 1.1rem; border-bottom: 1px solid #ddd; padding-bottom: 0.4rem; }
+  .can-id-row { background: #eef2f5; border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.6rem 0 0.4rem; }
+  .can-id-row label { font-size: 0.75rem; font-weight: 600; margin: 0 0 0.2rem; }
+  .can-id-row input { margin-bottom: 0; }
+  .can-slot-row { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.5rem; }
+  .can-slot-label { font-size: 0.72rem; color: #666; font-weight: 600; }
+  .can-slot-row input, .can-slot-row select { margin-bottom: 0.2rem; }
+  @media (max-width: 1100px) {
+    .can-columns { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 650px) {
+    .can-columns { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}

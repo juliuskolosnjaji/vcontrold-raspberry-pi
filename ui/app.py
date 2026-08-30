@@ -316,15 +316,16 @@ def settings():
     )
 
 
-CAN_BLOCK_ROWS = 16  # Anzahl editierbarer Zeilen (CAN-IDs) pro Block-Kategorie
-MAX_ANALOG_SLOTS = 4   # deckt den 2-Byte-Fall ab; bei 4 Byte werden nur die ersten 2 genutzt
-MAX_DIGITAL_SLOTS = 16
+TOTAL_SLOTS = 16              # feste Slot-Anzahl je Spalte (analog wie digital)
+ANALOG_SLOTS_PER_BLOCK = 4    # CAN-Frame-Limit bei 2 Byte/Wert: 8 Byte / 2 = 4
+ANALOG_BLOCK_COUNT = TOTAL_SLOTS // ANALOG_SLOTS_PER_BLOCK  # 4 CAN-IDs für 16 Analog-Slots
 
+# key, label, is_analog, allow_forward
 CAN_BLOCK_CATEGORIES = [
-    ("tx_analog_blocks", "Senden: Analog (Pi → UVR)", True, False, MAX_ANALOG_SLOTS),
-    ("tx_digital_blocks", "Senden: Digital (Pi → UVR)", False, False, MAX_DIGITAL_SLOTS),
-    ("rx_analog_blocks", "Empfangen: Analog (UVR → Pi)", True, True, MAX_ANALOG_SLOTS),
-    ("rx_digital_blocks", "Empfangen: Digital (UVR → Pi)", False, True, MAX_DIGITAL_SLOTS),
+    ("tx_analog_blocks", "Senden: Analog", True, False),
+    ("tx_digital_blocks", "Senden: Digital", False, False),
+    ("rx_analog_blocks", "Empfangen: Analog", True, True),
+    ("rx_digital_blocks", "Empfangen: Digital", False, True),
 ]
 
 
@@ -334,36 +335,31 @@ def load_can_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
-def build_rows_for_template(blocks: list, is_analog: bool, allow_forward: bool, max_slots: int) -> list:
-    rows = []
-    for block in blocks:
+def channel_to_slot(c, allow_forward: bool) -> dict:
+    if allow_forward:
+        if isinstance(c, dict):
+            return {"topic": c.get("topic", ""), "forward": c.get("forward_as_set", "")}
+        return {"topic": c or "", "forward": ""}
+    return {"value": c or ""}
+
+
+def build_slots_for_template(blocks: list, is_analog: bool, allow_forward: bool) -> list:
+    """Baut eine flache Liste von TOTAL_SLOTS Slots. Bei analog beginnt alle 4 Slots ein neuer
+    CAN-ID-Block (can_id_start=True), bei digital gibt es nur einen Block am Anfang."""
+    slots_per_block = ANALOG_SLOTS_PER_BLOCK if is_analog else TOTAL_SLOTS
+    slots = []
+    for slot_index in range(TOTAL_SLOTS):
+        block_index = slot_index // slots_per_block
+        pos_in_block = slot_index % slots_per_block
+        block = blocks[block_index] if block_index < len(blocks) else {}
         channels = block.get("channels", [])
-        slots = []
-        for j in range(max_slots):
-            c = channels[j] if j < len(channels) else None
-            if allow_forward:
-                if isinstance(c, dict):
-                    slots.append({"topic": c.get("topic", ""), "forward": c.get("forward_as_set", "")})
-                else:
-                    slots.append({"topic": c or "", "forward": ""})
-            else:
-                slots.append({"value": c or ""})
-        rows.append(
-            {
-                "can_id": block.get("can_id", ""),
-                "active": block.get("active", True),
-                "value_bytes": block.get("value_bytes", 2),
-                "slots": slots,
-            }
-        )
-    while len(rows) < CAN_BLOCK_ROWS:
-        empty_slots = (
-            [{"topic": "", "forward": ""} for _ in range(max_slots)]
-            if allow_forward
-            else [{"value": ""} for _ in range(max_slots)]
-        )
-        rows.append({"can_id": "", "active": True, "value_bytes": 2, "slots": empty_slots})
-    return rows[:CAN_BLOCK_ROWS]
+        c = channels[pos_in_block] if pos_in_block < len(channels) else None
+        slot = channel_to_slot(c, allow_forward)
+        slot["can_id_start"] = pos_in_block == 0
+        slot["can_id"] = block.get("can_id", "") if pos_in_block == 0 else None
+        slot["block_index"] = block_index
+        slots.append(slot)
+    return slots
 
 
 @app.route("/can-settings", methods=["GET", "POST"])
@@ -379,31 +375,19 @@ def can_settings():
         }
         errors = []
 
-        for key, _label, is_analog, allow_forward, max_slots in CAN_BLOCK_CATEGORIES:
+        for key, label, is_analog, allow_forward in CAN_BLOCK_CATEGORIES:
+            slots_per_block = ANALOG_SLOTS_PER_BLOCK if is_analog else TOTAL_SLOTS
+            block_count = ANALOG_BLOCK_COUNT if is_analog else 1
+
             blocks = []
-            for i in range(CAN_BLOCK_ROWS):
-                can_id_raw = request.form.get(f"{key}_can_id_{i}", "").strip()
-                if not can_id_raw:
-                    continue
-                try:
-                    can_id_int = int(can_id_raw, 0)
-                except ValueError:
-                    errors.append(f"{key} Zeile {i + 1}: ungültige CAN-ID '{can_id_raw}'")
-                    continue
-
-                block = {"can_id": hex(can_id_int), "active": request.form.get(f"{key}_active_{i}") == "1"}
-                if is_analog:
-                    value_bytes = int(request.form.get(f"{key}_value_bytes_{i}", 2))
-                    block["value_bytes"] = value_bytes
-                    used_slots = proto.analog_values_per_block(value_bytes)
-                else:
-                    used_slots = proto.DIGITAL_VALUES_PER_BLOCK
-
+            for block_index in range(block_count):
+                can_id_raw = request.form.get(f"{key}_can_id_{block_index}", "").strip()
                 channels = []
-                for j in range(used_slots):
+                for pos in range(slots_per_block):
+                    slot_index = block_index * slots_per_block + pos
                     if allow_forward:
-                        topic = request.form.get(f"{key}_slot_topic_{i}_{j}", "").strip()
-                        forward = request.form.get(f"{key}_slot_forward_{i}_{j}", "").strip()
+                        topic = request.form.get(f"{key}_slot_topic_{slot_index}", "").strip()
+                        forward = request.form.get(f"{key}_slot_forward_{slot_index}", "").strip()
                         if not topic:
                             channels.append(None)
                         elif forward:
@@ -411,9 +395,25 @@ def can_settings():
                         else:
                             channels.append(topic)
                     else:
-                        value = request.form.get(f"{key}_slot_value_{i}_{j}", "").strip()
+                        value = request.form.get(f"{key}_slot_value_{slot_index}", "").strip()
                         channels.append(value or None)
-                block["channels"] = channels
+
+                if not can_id_raw:
+                    if any(c is not None for c in channels):
+                        errors.append(
+                            f"{label}, Slots {block_index * slots_per_block + 1}-"
+                            f"{(block_index + 1) * slots_per_block}: Kanäle belegt, aber keine CAN-ID gesetzt"
+                        )
+                    continue
+                try:
+                    can_id_int = int(can_id_raw, 0)
+                except ValueError:
+                    errors.append(f"{label}, Block {block_index + 1}: ungültige CAN-ID '{can_id_raw}'")
+                    continue
+
+                block = {"can_id": hex(can_id_int), "channels": channels}
+                if is_analog:
+                    block["value_bytes"] = 2
                 blocks.append(block)
             new_mapping[key] = blocks
 
@@ -435,16 +435,15 @@ def can_settings():
             else:
                 message, message_ok = "Gespeichert. can-node läuft nicht, wurde nicht neu gestartet.", True
 
-    categories = []
-    for key, label, is_analog, allow_forward, max_slots in CAN_BLOCK_CATEGORIES:
-        categories.append(
+    columns = []
+    for key, label, is_analog, allow_forward in CAN_BLOCK_CATEGORIES:
+        columns.append(
             {
                 "key": key,
                 "label": label,
                 "is_analog": is_analog,
                 "allow_forward": allow_forward,
-                "max_slots": max_slots,
-                "rows": build_rows_for_template(mapping.get(key, []), is_analog, allow_forward, max_slots),
+                "slots": build_slots_for_template(mapping.get(key, []), is_analog, allow_forward),
             }
         )
 
@@ -459,8 +458,8 @@ def can_settings():
         "can_settings.html",
         bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
         own_node_number=mapping.get("own_node_number", 1),
-        categories=categories,
-        num_rows=range(CAN_BLOCK_ROWS),
+        columns=columns,
+        total_slots=TOTAL_SLOTS,
         available_subtopics=sorted(available_subtopics),
         available_set_keys=available_set_keys,
         message=message,
