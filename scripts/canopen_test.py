@@ -13,8 +13,11 @@ Zwei Verbindungswege:
   --handshake: TA-spezifischer Verbindungsaufbau aus ta_canopen.py (temporäre COB-ID
     über 0x400|eigene_node_id anfordern) -- falls --direct nicht antwortet.
 
-Beispiel:
+Beispiel (bestätigter Weg, siehe README 3.3):
   sudo ip link set can1 up type can bitrate 50000
+  venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65
+
+Beispiel (unverifizierte Referenzindizes, vermutlich falsch für dieses Gerät):
   venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
 """
 import argparse
@@ -53,16 +56,41 @@ def poll_uvr1611(node: canopen.RemoteNode, count: int, delay: float) -> None:
         time.sleep(delay)
 
 
+def poll_record(node: canopen.RemoteNode, count: int, delay: float) -> None:
+    """Bestätigter Weg für dieses Projekt (siehe ta_canopen.py-Modul-Docstring):
+    kompletter Datensatz statt einzelner geratener Objektindizes."""
+    for i in range(count):
+        try:
+            payload = node.sdo.upload(ta.UVR_DATENSATZ_OBJ, ta.UVR_DATENSATZ_SUBINDEX)
+            record = ta.decode_datensatz(payload)
+            day, month, year = record["date"]
+            hour, minute, second = record["time"]
+            print(f"--- Durchlauf {i + 1}/{count} ({day:02d}.{month:02d}.{year} {hour:02d}:{minute:02d}:{second:02d}) ---")
+            for slot, value in enumerate(record["values"], start=1):
+                print(f"  Slot {slot:2d}: {value:8.1f}")
+        except Exception as exc:
+            print(f"Fehler beim Lesen des Datensatzes: {exc}", file=sys.stderr)
+        time.sleep(delay)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
-    parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], required=True)
+    parser.add_argument(
+        "--read-record",
+        action="store_true",
+        help="Bestätigter Weg (siehe README 3.3): kompletten Datensatz (Objekt 0x4FF4:04) lesen statt --device",
+    )
+    parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], help="Nur mit den unverifizierten Referenzindizes, siehe ta_canopen.py")
     parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63, nur für --handshake)")
     parser.add_argument("--uvr-node-id", type=int, required=True, help="Knoten-Nummer der UVR (Handbuch/Menü prüfen)")
     parser.add_argument("--handshake", action="store_true", help="TA-Verbindungsaufbau statt Standard-SDO-COB-IDs")
     parser.add_argument("--count", type=int, default=3, help="Anzahl Poll-Durchläufe (Standard: 3)")
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
     args = parser.parse_args()
+
+    if not args.read_record and not args.device:
+        parser.error("--read-record oder --device angeben")
 
     bus = can.interface.Bus(channel=args.interface, interface="socketcan")
     network = canopen.Network()
@@ -89,7 +117,9 @@ def main() -> None:
         node = network.add_node(args.uvr_node_id, ta.EDS_PATH)
 
     try:
-        if args.device == "uvr16x2":
+        if args.read_record:
+            poll_record(node, args.count, args.delay)
+        elif args.device == "uvr16x2":
             poll_uvr16x2(node, args.count, args.delay)
         else:
             poll_uvr1611(node, args.count, args.delay)

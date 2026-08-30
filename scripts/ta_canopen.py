@@ -1,23 +1,28 @@
 """
 CANopen/SDO-Zugriff auf Technische-Alternative-Regler (UVR1611, UVR16x2).
 
-Herkunft: TA-CAN nutzt laut Community-Analyse (holzheizer-forum.de, Thread 61195)
-Standard-CANopen-SDO, nicht komplett proprietäres Format. Objektverzeichnis-Indizes
-und Dekodierlogik unten sind aus dem MIT diesem Wissen real funktionierenden Projekt
-github.com/staircaseblog/uvr16x2logging abgeleitet (für Python 3 + aktuelle
-"canopen"-Bibliothek neu geschrieben, nicht kopiert).
+BESTÄTIGT gegen echte Hardware (siehe README Abschnitt 3.3): dieses Gerät antwortet
+direkt auf Standard-CANopen-SDO-COB-IDs (0x600+NodeID / 0x580+NodeID), OHNE den
+TA-Verbindungsaufbau unten -- der ist daher vermutlich für dieses Gerät gar nicht
+nötig (siehe canopen_test.py --direct). Ein bereits vorhandener zweiter Master auf
+dem Bus liest Objekt 0x4FF4:04 per SDO-Block-Transfer -- ein 98-Byte-Datensatz mit
+Datum/Zeit + 21 Werten (siehe decode_datensatz()), passiv per sdo_sniffer.py
+mitgeschnitten und gegen einen am UVR-Display abgelesenen Wert verifiziert
+(Slot 1 = 29.1 = "Analogausgang 1: Vorlauftemperatur").
 
-STATUS: NICHT gegen echte Hardware verifiziert (CAN-Kabel zur UVR noch nicht gelegt).
-Community warnt explizit, TA weiche in Details vom CANopen-Standard ab. Vor
-Produktivbetrieb mit scripts/canopen_test.py gegen die echte UVR testen
-(README Abschnitt 3.3).
+Die UVR16X2_OBJ_*/UVR1611_OBJ_*-Konstanten und decode_uvr16x2_value()/
+decode_uvr1611_value() unten sind dagegen NUR aus dem Referenzprojekt
+github.com/staircaseblog/uvr16x2logging übernommene Vermutungen -- gegen dieses
+Gerät getestet, Ergebnis "Object does not exist" (0x06020000). Vermutlich andere
+Firmware-/Geräte-Variante. Als Fallback/Ausgangspunkt für andere Geräte belassen,
+für DIESES Projekt ist decode_datensatz() der bestätigte Weg.
 
-Verbindungsaufbau (TA-Eigenheit, kein Standard-CANopen):
-  Reglers vergeben keine feste SDO-COB-ID nach der üblichen Formel (0x600+NodeID
-  Client->Server, 0x580+NodeID Server->Client). Stattdessen muss zuerst auf
-  COB-ID (0x400 | eigene_node_id) eine Verbindungsanfrage gesendet werden; der
-  Regler antwortet auf derselben COB-ID mit einer temporären COB-ID, die dann als
-  SDO-Client-COB-ID für den eigentlichen canopen-Node verwendet wird.
+Verbindungsaufbau (TA-Eigenheit, für dieses Gerät nicht nötig, siehe oben):
+  Manche TA-Regler vergeben laut Community offenbar keine feste SDO-COB-ID nach der
+  üblichen Formel. Stattdessen müsste zuerst auf COB-ID (0x400 | eigene_node_id)
+  eine Verbindungsanfrage gesendet werden; der Regler antwortet auf derselben
+  COB-ID mit einer temporären COB-ID, die dann als SDO-Client-COB-ID für den
+  eigentlichen canopen-Node verwendet wird.
 """
 import pathlib
 import struct
@@ -25,7 +30,38 @@ import threading
 
 import canopen
 
-# Objektverzeichnis UVR16x2 (Quelle: uvr16x2logging, empirisch ermittelt)
+# Bestätigter Datensatz-Zugriff (siehe Modul-Docstring): kompletter Datensatz statt
+# einzelner Werte, per SDO-Block-Transfer (canopen-Bibliothek handhabt das transparent
+# über node.sdo.upload(), solange der Block-Transfer standardkonform abläuft -- war
+# bei diesem Gerät der Fall, siehe canopen_test.py --read-record).
+UVR_DATENSATZ_OBJ = 0x4FF4
+UVR_DATENSATZ_SUBINDEX = 0x04
+
+
+def decode_datensatz(payload: bytes) -> dict:
+    """Dekodiert den 98-Byte-Datensatz von Objekt 0x4FF4:04 (bestätigt, siehe
+    Modul-Docstring). Aufbau: 6 Byte Datum/Zeit, dann N x 4-Byte-Werte (signed
+    Little-Endian, /10 skaliert), dann 2 Nullbyte + 4-Byte-Prüfsumme (Algorithmus
+    noch nicht verifiziert) + 2-Byte CRLF-Ende (0x0D 0x0A)."""
+    if len(payload) < 6 + 4 + 2 + 4 + 2 or not payload.endswith(b"\r\n"):
+        raise ValueError(f"Unerwartetes Datensatz-Format ({len(payload)} Byte): {payload.hex()}")
+    day, month, year, second, minute, hour = payload[0], payload[1], payload[2], payload[3], payload[4], payload[5]
+    value_area = payload[6:-8]  # 8 = 2 Nullbyte + 4 Byte Prüfsumme + 2 Byte CRLF
+    values = [
+        struct.unpack("<i", value_area[i : i + 4])[0] / 10.0
+        for i in range(0, len(value_area) - (len(value_area) % 4), 4)
+    ]
+    checksum = payload[-6:-2]
+    return {
+        "date": (day, month, 2000 + year),
+        "time": (hour, minute, second),
+        "values": values,
+        "checksum": checksum,
+    }
+
+
+# Objektverzeichnis UVR16x2 (Quelle: uvr16x2logging, UNVERIFIZIERT für dieses Gerät,
+# siehe Modul-Docstring)
 UVR16X2_OBJ_AUSGAENGE = 0x8400          # Netzwerkausgänge, subindex 1-16
 UVR16X2_OBJ_EINGANG_WERT = 0x8272       # Eingangswert, subindex 1-16
 UVR16X2_OBJ_EINGANG_BEZEICHNUNG = 0x8207  # Eingangsbezeichnung (String), subindex 1-16

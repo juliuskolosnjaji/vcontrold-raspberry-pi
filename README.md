@@ -237,47 +237,54 @@ Damit der Wert tatsächlich über CAN läuft, den **gleichen Namen** zusätzlich
 Write-Slot (und optional einem Read-Slot, falls die UVR den Wert bestätigend zurücksendet) in
 den CAN-Einstellungen der Web-UI eintragen — siehe Abschnitt 6.
 
-### 3.3 CANopen/SDO — experimenteller Alternativweg
+### 3.3 CANopen/SDO — bestätigter Weg für dieses Gerät
 
 Recherche zweier Community-Quellen (Forum-Thread
 [holzheizer-forum.de/thread/61195](https://www.holzheizer-forum.de/forum/thread/61195-uvr16x2-via-can-mit-raspberry-koppeln-ohne-cmi/)
-und das reale, funktionierende Python-Projekt
-[staircaseblog/uvr16x2logging](https://github.com/staircaseblog/uvr16x2logging)) zeigt: TA-Regler
-(UVR1611, UVR16x2) sprechen auf dem CAN-Bus **Standard-CANopen-SDO**, nicht ein rein proprietäres
-Format wie in Abschnitt 3.1 angenommen. Es gibt konkrete, bekannte Objektverzeichnis-Indizes statt
-"CAN-ID + Byte-Offset per Sniffer raten".
+und das Python-Projekt [staircaseblog/uvr16x2logging](https://github.com/staircaseblog/uvr16x2logging))
+zeigte: TA-Regler sprechen auf dem CAN-Bus **Standard-CANopen-SDO**, nicht ein rein proprietäres
+Format wie in Abschnitt 3.1 angenommen. Zwischenzeitlich **gegen die echte Hardware verifiziert**:
 
-**Bestätigt per `candump can1`:** auf dem echten Bus laufen bereits Standard-CANopen-SDO-Frames
-(`0x641`/`0x5C1` = Client→Server/Server→Client-Paar) mit **Node-ID 65 (0x41)** als Ziel — vermutlich
-von einem bereits vorhandenen Master (z.B. CMI). Zusätzlich TPDO-Traffic (`0x481`) von einem
-zweiten TA-Gerät mit Node-ID 1. Das bestätigt: CANopen SDO ist real auf diesem Bus im Einsatz, und
-die UVR16x2 selbst läuft unter Node-ID 65, nicht 1.
+- `candump can1` zeigte bereits laufenden Standard-SDO-Traffic (`0x641`/`0x5C1`) — Node-ID der UVR
+  ist **65 (0x41)**, nicht 1 (das ist ein zweites TA-Gerät im Netz).
+- Kein TA-Verbindungsaufbau nötig: das Gerät antwortet direkt auf die Standard-COB-IDs
+  (`0x600+NodeID`/`0x580+NodeID`), `canopen_test.py --direct` (Standard) funktioniert ohne Handshake.
+- Die aus `staircaseblog/uvr16x2logging` übernommenen Objektindizes (`0x8272` etc., UVR16x2-Eingang)
+  existieren auf diesem Gerät **nicht** (`Object does not exist`, 0x06020000) — vermutlich andere
+  Firmware-/Geräte-Variante.
+- Stattdessen liest ein bereits vorhandener zweiter Master (vermutlich CMI) laufend **Objekt
+  `0x4FF4:04`** per SDO-Block-Transfer — ein **98-Byte-Datensatz**. Mit `scripts/sdo_sniffer.py`
+  passiv mitgeschnitten und gegen einen am UVR-Display abgelesenen Wert verifiziert:
 
-**Was das ändert:** statt CAN-IDs/Byte-Slots empirisch per Sniffer zu ermitteln (Abschnitt 3.1),
-könnten Werte direkt über feste Objektindizes gelesen werden (z.B. UVR16x2-Eingang 1 = Objekt
-`0x8272`, Subindex 1).
+  ```
+  Byte 0-5:   Tag, Monat, Jahr (2-stellig), Sekunde, Minute, Stunde
+  Byte 6-89:  21 Werte, je 4 Byte signed Little-Endian, /10 skaliert
+  Byte 90-91: 2 Nullbyte
+  Byte 92-95: 4-Byte Prüfsumme (Algorithmus noch nicht verifiziert)
+  Byte 96-97: 0x0D 0x0A (CRLF-Ende)
+  ```
 
-**Was noch offen ist:** ob `ta_canopen.py`s TA-spezifischer Verbindungsaufbau (eigener Handshake
-vor dem eigentlichen SDO-Zugriff, siehe Modul-Docstring) für dieses Gerät exakt stimmt, und ob die
-übernommenen Objektindizes zur genauen Firmware-Version passen — beides noch nicht per
-`canopen_test.py` bestätigt. Deshalb ersetzt dieser Weg aktuell **nicht** das produktiv laufende
-`can_node.py`/`config/can_mapping.json`-System aus 3.1, sondern steht als eigenständig testbares
-Werkzeug daneben:
+  Slot 1 = 29,1 wurde gegen die reale Anzeige "Analogausgang 1: Vorlauftemperatur" bestätigt; Slot 19/20
+  (53,1 / 54,0) passen zu den bekannten Vitotronic-Werten Kesseltemperatur-Ist/Warmwassertemperatur
+  (die laut Architektur per CAN an die UVR durchgereicht werden). Welche UVR-Kanäle genau hinter den
+  übrigen Slots stecken, ist noch nicht für jeden Slot einzeln bestätigt.
+
+Testen:
 
 ```bash
 sudo ip link set can1 up type can bitrate 50000
-venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
+venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65
 ```
 
-`--uvr-node-id` ist die im UVR-Menü/Handbuch eingestellte Knoten-Nummer des Reglers (nicht die
-eigene) — in diesem Projekt per `candump` als **65** bestätigt. Bei Erfolg gibt das Skript alle 16
-Eingangswerte inkl. Einheit aus. Schlägt der Verbindungsaufbau fehl (Timeout/COB-ID 0): Bitrate,
-Verkabelung/Terminierung und Knoten-Nummer prüfen.
+Gibt bei Erfolg Datum/Uhrzeit + alle 21 Slots aus. Implementiert in `scripts/ta_canopen.py`
+(`decode_datensatz()`) und nutzt intern `node.sdo.upload()` der `canopen`-Bibliothek, die den
+Block-Transfer transparent handhabt.
 
-**Sobald `canopen_test.py` gegen die echte UVR funktioniert**, wird `can_node.py` in einem
-Folgeschritt auf diesen Weg umgestellt (ersetzt dann `ta_can_protocol.py`s Blockkodierung für den
-Read-Pfad). Der Schreib-Pfad (Pi → UVR, "Netzwerkeingänge setzen") ist im Referenzprojekt nicht
-abgedeckt und bleibt vorerst offen.
+**Noch offen:** Prüfsummen-Algorithmus (nicht sicherheitskritisch für reines Auslesen, aber gut für
+Validierung), genaue Kanalzuordnung der restlichen Slots, und der Schreib-Pfad (Pi → UVR) — dafür gibt
+es noch kein bestätigtes Objekt/Verfahren. `can_node.py`/`config/can_mapping.json` (Abschnitt 3.1)
+laufen deshalb weiterhin produktiv; die Umstellung auf diesen Weg ist der nächste Schritt, sobald die
+restlichen Slots zugeordnet sind.
 
 ## 4. Home Assistant einbinden
 
