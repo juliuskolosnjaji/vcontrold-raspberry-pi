@@ -245,10 +245,14 @@ und das Python-Projekt [staircaseblog/uvr16x2logging](https://github.com/stairca
 zeigte: TA-Regler sprechen auf dem CAN-Bus **Standard-CANopen-SDO**, nicht ein rein proprietäres
 Format wie in Abschnitt 3.1 angenommen. Zwischenzeitlich **gegen die echte Hardware verifiziert**:
 
-- `candump can1` zeigte bereits laufenden Standard-SDO-Traffic (`0x641`/`0x5C1`) — Node-ID der UVR
-  ist **65 (0x41)**, nicht 1 (das ist ein zweites TA-Gerät im Netz).
+- `candump can1` zeigte bereits laufenden Standard-SDO-Traffic (`0x641`/`0x5C1`, Node 65). Das war
+  aber **nicht** die UVR selbst, sondern eine bereits bestehende, separate Verbindung des CMI zu
+  seiner eigenen CMI-COE-Bridge nach Home Assistant (die dieses Projekt bewusst nicht nutzt/ersetzt).
+  Die **echte, im CMI angezeigte Knotennummer der UVR ist 10** — direkt getestet, liefert exakt
+  dieselben Werte, ganz ohne Umweg über die alte CoE-Verbindung.
 - Kein TA-Verbindungsaufbau nötig: das Gerät antwortet direkt auf die Standard-COB-IDs
-  (`0x600+NodeID`/`0x580+NodeID`), `canopen_test.py --direct` (Standard) funktioniert ohne Handshake.
+  (`0x600+NodeID`/`0x580+NodeID`, hier `0x60A`/`0x58A` für Node 10), `canopen_test.py --direct`
+  (Standard) funktioniert ohne Handshake.
 - Die aus `staircaseblog/uvr16x2logging` übernommenen Objektindizes (`0x8272` etc., UVR16x2-Eingang)
   existieren auf diesem Gerät **nicht** (`Object does not exist`, 0x06020000) — vermutlich andere
   Firmware-/Geräte-Variante. **Update:** per `candump` (während CMI eine "CAN-Analogausgang"-Seite
@@ -278,7 +282,7 @@ Testen:
 
 ```bash
 sudo ip link set can1 up type can bitrate 50000
-venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65
+venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 10
 ```
 
 Gibt bei Erfolg Datum/Uhrzeit + alle 21 Slots aus. Implementiert in `scripts/ta_canopen.py`
@@ -286,13 +290,12 @@ Gibt bei Erfolg Datum/Uhrzeit + alle 21 Slots aus. Implementiert in `scripts/ta_
 Block-Transfer transparent handhabt.
 
 **Wichtige Einschränkung, bestätigt an echter Hardware:** SDO-COB-IDs hängen nur vom *Server*
-(UVR, Node 65) ab, nicht vom Client — `0x641`/`0x5C1` sind fix für jeden, der mit Node 65 spricht.
-Da bereits ein anderer Master (vermutlich CMI) laufend denselben Datensatz abfragt, kollidieren
-eigene aktive `--read-record`-Anfragen mit dessen Traffic (Timeouts/`Object does not exist`
-möglich, je nach Timing). **Für reines Lesen ist deshalb `scripts/sdo_sniffer.py` (rein passiv,
-keine eigene Anfrage) der robustere Weg** — der Datensatz wird ohnehin laufend vom vorhandenen
-Master abgefragt, man muss nur mitlesen. Eigene aktive SDO-Requests sind nur für einen künftigen
-Schreib-Pfad (Pi → UVR) nötig, wo es keine Konkurrenz gibt.
+(UVR, Node 10) ab, nicht vom Client — `0x60A`/`0x58A` sind fix für jeden, der mit Node 10 spricht.
+Falls das CMI selbst (oder die alte CoE-Verbindung) parallel denselben Kanal nutzt, können eigene
+aktive Anfragen kollidieren (Timeouts/`Object does not exist` möglich, je nach Timing — direkt
+gegen Node 10 bisher aber durchgehend erfolgreich). **Für reines Lesen ist `scripts/sdo_sniffer.py`
+(rein passiv, keine eigene Anfrage) trotzdem die kollisionsfreie Alternative**, falls aktive Reads
+doch mal unzuverlässig werden.
 
 **Als eigener CANopen-Knoten anmelden** (z.B. damit der Pi im TA-CMI sauber auftaucht, nicht als
 "Einbahnstraße"/Fehler): `--heartbeat` meldet den Pi per `ta_canopen.create_own_node()` mit Bootup,

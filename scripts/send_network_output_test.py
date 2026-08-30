@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-Testet, ob die UVR einen per Standard-CANopen-TPDO gesendeten "Netzwerkausgang"
-annimmt (siehe README Abschnitt 3.1/3.3). Hintergrund: die UVR16x2-Bedienungsanleitung
-bestätigt, dass CAN-Analogeingänge über Knotennummer + Ausgangsnummer des Senders
-konfiguriert werden (nicht über eine rohe CAN-ID) -- TA rechnet die tatsächliche
-CAN-ID intern aus. Hypothese, basierend auf allem bisher an echter Hardware
-beobachteten (Standard-CANopen-TPDO-COB-ID-Schema, 4 Werte pro Frame, Little-Endian,
-/10 skaliert): Ausgänge 1-4 -> TPDO1 (COB-ID 0x180+NodeID), 5-8 -> TPDO2 (0x280+...),
-9-12 -> TPDO3 (0x380+...), 13-16 -> TPDO4 (0x480+...), jeweils 4x int16 LE im
-8-Byte-Frame, Ausgang N an Position (N-1)%4.
+Sendet einen TA-"Netzwerkausgang" (analog) an die UVR (siehe README Abschnitt 3.1/3.3).
+
+COB-ID-Schema laut Community-Guide (community.home-assistant.io, "UVR16x2 via
+CANable/candlelight, no C.M.I., full guide"), extrahiert aus TA-Dokumentation:
+  0x180+Node: Digital-Ausgänge 1-16
+  0x200+Node: Analog-Ausgänge 1-4
+  0x280+Node: Analog-Ausgänge 5-8
+  0x300+Node: Analog-Ausgänge 9-12
+  0x380+Node: Analog-Ausgänge 13-16
+Je 4x signed int16 Little-Endian pro 8-Byte-Frame, /10 skaliert. Das ist vermutlich
+der Grund, warum der vorherige Test mit 0x180 als Analog-Basis nichts bewirkt hat --
+0x180 ist laut dieser Quelle nur für Digital-Ausgänge.
 
 Noch NICHT gegen echte Hardware verifiziert -- genau dafür ist dieses Skript da.
 
@@ -22,7 +25,7 @@ import time
 
 import can
 
-TPDO_COB_ID_BASE = (0x180, 0x280, 0x380, 0x480)  # TPDO1..TPDO4
+ANALOG_COB_ID_BASE = (0x200, 0x280, 0x300, 0x380)  # Ausgänge 1-4, 5-8, 9-12, 13-16
 
 
 def build_frame(output: int, value: float, existing: list[float]) -> tuple[int, bytes]:
@@ -30,13 +33,13 @@ def build_frame(output: int, value: float, existing: list[float]) -> tuple[int, 
     anderen Werte desselben TPDO-Frames (unverändert lassen, nur den Zielwert setzen)."""
     if not 1 <= output <= 16:
         raise ValueError("output muss 1-16 sein")
-    pdo_index = (output - 1) // 4
+    block_index = (output - 1) // 4
     slot = (output - 1) % 4
     values = list(existing)
     values[slot] = value
     raw = [round(v * 10) for v in values]
     payload = struct.pack("<4h", *raw)
-    return TPDO_COB_ID_BASE[pdo_index], payload
+    return ANALOG_COB_ID_BASE[block_index], payload
 
 
 def main() -> None:

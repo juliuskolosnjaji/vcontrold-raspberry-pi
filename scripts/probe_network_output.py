@@ -19,7 +19,7 @@ import time
 
 import can
 
-TPDO_COB_ID_BASE = (0x180, 0x280, 0x380, 0x480)
+TPDO_COB_ID_BASE = (0x200, 0x280, 0x300, 0x380)  # bestätigt: Analog-Ausgänge 1-4/5-8/9-12/13-16
 TEST_VALUE = 37.7  # ungewöhnlicher Wert, unwahrscheinlich mit echtem Sensor verwechselbar
 TEST_RAW = round(TEST_VALUE * 10)  # 377
 
