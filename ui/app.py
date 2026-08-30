@@ -116,48 +116,71 @@ def console():
     )
 
 
-@app.route("/config-import", methods=["GET", "POST"])
-def config_import():
+def finish_vcontrold_restart(action_desc: str) -> tuple[str, bool]:
+    restart = diagnostics.restart_service("vcontrold")
+    status = diagnostics.service_status("vcontrold")
+    if restart["ok"] and status["state"] == "active":
+        return f"{action_desc}, vcontrold läuft.", True
+    return (
+        f"{action_desc}, aber vcontrold-Neustart fehlgeschlagen: {restart['detail'] or status['state']}",
+        False,
+    )
+
+
+@app.route("/config", methods=["GET", "POST"])
+def config_page():
     cfg = get_ui_config()
+    main_path = pathlib.Path(cfg["vcontrold_main_xml"])
+    device_path = pathlib.Path(cfg["device_xml"]) if cfg["device_xml"] else None
+
     message = None
     message_ok = None
 
     if request.method == "POST":
-        uploaded = request.files.get("xml_file")
-        if not uploaded or not uploaded.filename:
-            message, message_ok = "Keine Datei ausgewählt.", False
+        target = request.form.get("target")
+        path = main_path if target == "main" else device_path
+
+        if path is None:
+            message, message_ok = "DEVICE_XML_PATH ist nicht konfiguriert.", False
         else:
-            filename = secure_filename(uploaded.filename)
-            tmp_path = pathlib.Path("/tmp") / filename
-            uploaded.save(tmp_path)
-
-            try:
-                ET.parse(tmp_path)
-            except ET.ParseError as exc:
-                message, message_ok = f"Ungültiges XML: {exc}", False
-            else:
-                target = pathlib.Path(cfg["vcontrold_main_xml"])
-                if target.exists():
-                    backup = target.with_suffix(
-                        target.suffix + f".bak.{datetime.datetime.now():%Y%m%d%H%M%S}"
-                    )
-                    shutil.copy2(target, backup)
-                shutil.copy2(tmp_path, target)
-
-                restart = diagnostics.restart_service("vcontrold")
-                status = diagnostics.service_status("vcontrold")
-                if restart["ok"] and status["state"] == "active":
-                    message, message_ok = f"Config importiert nach {target}, vcontrold läuft.", True
+            uploaded = request.files.get("xml_file")
+            if uploaded and uploaded.filename:
+                filename = secure_filename(uploaded.filename)
+                tmp_path = pathlib.Path("/tmp") / filename
+                uploaded.save(tmp_path)
+                try:
+                    content = tmp_path.read_text()
+                    ET.fromstring(content)
+                except ET.ParseError as exc:
+                    message, message_ok = f"Ungültiges XML: {exc}", False
                 else:
-                    message, message_ok = (
-                        f"Config importiert, aber vcontrold-Neustart fehlgeschlagen: "
-                        f"{restart['detail'] or status['state']}",
-                        False,
-                    )
-            finally:
-                tmp_path.unlink(missing_ok=True)
+                    backup_and_write(path, content)
+                    message, message_ok = finish_vcontrold_restart(f"{path.name} importiert")
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+            else:
+                content = request.form.get("content", "")
+                try:
+                    ET.fromstring(content)
+                except ET.ParseError as exc:
+                    message, message_ok = f"Ungültiges XML: {exc}", False
+                else:
+                    backup_and_write(path, content)
+                    message, message_ok = finish_vcontrold_restart(f"{path.name} gespeichert")
 
-    return render_template("config_import.html", cfg=cfg, message=message, message_ok=message_ok)
+    main_content = main_path.read_text() if main_path.exists() else ""
+    device_content = device_path.read_text() if device_path is not None and device_path.exists() else ""
+
+    return render_template(
+        "config.html",
+        cfg=cfg,
+        main_path=str(main_path),
+        device_path=str(device_path) if device_path else None,
+        main_content=main_content,
+        device_content=device_content,
+        message=message,
+        message_ok=message_ok,
+    )
 
 
 MQTT_FIELDS = [
@@ -193,65 +216,6 @@ def backup_and_write(target: pathlib.Path, content: str) -> None:
         shutil.copy2(target, backup)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content)
-
-
-@app.route("/config-editor", methods=["GET", "POST"])
-def config_editor():
-    cfg = get_ui_config()
-    main_path = pathlib.Path(cfg["vcontrold_main_xml"])
-    device_path = pathlib.Path(cfg["device_xml"]) if cfg["device_xml"] else None
-
-    message = None
-    message_ok = None
-
-    main_content = request.form.get("main_content", "")
-    device_content = request.form.get("device_content", "")
-
-    if request.method == "POST":
-        errors = []
-        try:
-            ET.fromstring(main_content)
-        except ET.ParseError as exc:
-            errors.append(f"vcontrold.xml ungültig: {exc}")
-        if device_path is not None:
-            try:
-                ET.fromstring(device_content)
-            except ET.ParseError as exc:
-                errors.append(f"vito.xml ungültig: {exc}")
-
-        if errors:
-            message, message_ok = " / ".join(errors), False
-        else:
-            backup_and_write(main_path, main_content)
-            if device_path is not None:
-                backup_and_write(device_path, device_content)
-
-            restart = diagnostics.restart_service("vcontrold")
-            status = diagnostics.service_status("vcontrold")
-            if restart["ok"] and status["state"] == "active":
-                message, message_ok = "Gespeichert, Backup angelegt, vcontrold läuft.", True
-            else:
-                message, message_ok = (
-                    f"Gespeichert, aber vcontrold-Neustart fehlgeschlagen: "
-                    f"{restart['detail'] or status['state']}",
-                    False,
-                )
-    else:
-        main_content = main_path.read_text() if main_path.exists() else ""
-        device_content = (
-            device_path.read_text() if device_path is not None and device_path.exists() else ""
-        )
-
-    return render_template(
-        "config_editor.html",
-        cfg=cfg,
-        main_path=str(main_path),
-        device_path=str(device_path) if device_path else None,
-        main_content=main_content,
-        device_content=device_content,
-        message=message,
-        message_ok=message_ok,
-    )
 
 
 @app.route("/settings", methods=["GET", "POST"])
