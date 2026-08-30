@@ -96,17 +96,25 @@ def main() -> None:
         print(f"Konnte {CAN_INTERFACE} nicht öffnen: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    rx_analog_by_id = {int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", [])}
-    rx_digital_by_id = {int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", [])}
+    rx_analog_by_id = {
+        int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", []) if b.get("active", True)
+    }
+    rx_digital_by_id = {
+        int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", []) if b.get("active", True)
+    }
 
     def send_tx_analog_blocks():
         for block in mapping.get("tx_analog_blocks", []):
+            if not block.get("active", True):
+                continue
             values = [tx_values.get(ch) for ch in block["channels"]]
             data = proto.encode_analog_block(values, value_bytes=block.get("value_bytes", 2))
             bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
     def send_tx_digital_blocks():
         for block in mapping.get("tx_digital_blocks", []):
+            if not block.get("active", True):
+                continue
             values = [bool(tx_values.get(ch)) if ch else None for ch in block["channels"]]
             data = proto.encode_digital_block(values)
             bus.send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))

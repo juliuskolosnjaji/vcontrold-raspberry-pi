@@ -8,28 +8,6 @@
      Werte auf welchen CAN-IDs/Slots gesendet bzw. empfangen werden. Die CAN-IDs sind erst nach
      dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen (siehe README
      Abschnitt 3) bekannt — bis dahin einfach leer lassen.</p>
-  <p><strong>Kanal-Syntax:</strong> kommagetrennte Liste, ein Eintrag pro Slot, leer = unbelegt.
-     Bei den Empfangs-Kategorien kann ein Eintrag zusätzlich <code>topic&gt;set_schlüssel</code>
-     lauten, um den empfangenen Wert auch als Set-Anfrage an den Orchestrator weiterzuleiten
-     (der <code>set_schlüssel</code> muss in <code>config/command_map.json</code> existieren).</p>
-
-  <p><strong>Verfügbare Subtopic-Namen</strong> (aus
-     <a href="{{ url_for('read_cycles_settings') }}">Read-Zyklen</a>, für "Senden"-Kanäle
-     exakt so eintragen):
-     {% if available_subtopics %}
-       {% for name in available_subtopics %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-     {% else %}
-       <em>keine (Read-Zyklen noch nicht konfiguriert)</em>
-     {% endif %}
-  </p>
-  <p><strong>Verfügbare Set-Schlüssel</strong> (aus <code>config/command_map.json</code>, für
-     <code>&gt;set_schlüssel</code> bei "Empfangen"-Kanälen):
-     {% if available_set_keys %}
-       {% for name in available_set_keys %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-     {% else %}
-       <em>keine (command_map.json noch nicht angelegt)</em>
-     {% endif %}
-  </p>
 
   <form method="post">
     <label for="bitrate">CAN-Bitrate</label>
@@ -46,27 +24,52 @@
 
     {% for cat in categories %}
     <h2>{{ cat.label }}</h2>
-    <table>
-      <tr>
-        <th>CAN-ID (z.B. 0x181)</th>
-        {% if cat.is_analog %}<th>Byte/Wert</th>{% endif %}
-        <th>Kanäle{% if cat.is_analog %} (4 bei 2 Byte, 2 bei 4 Byte){% else %} (16 Slots){% endif %}</th>
-      </tr>
-      {% for i in num_rows %}
-      <tr>
-        <td><input type="text" name="{{ cat.key }}_can_id_{{ i }}" value="{{ cat.rows[i].can_id }}" placeholder="0x0" style="margin-bottom:0;"></td>
+    {% for i in num_rows %}
+    {% set row = cat.rows[i] %}
+    <div class="can-block {{ 'can-block-inactive' if not row.active }}">
+      <div class="can-block-header">
+        <label class="can-inline">
+          <input type="checkbox" name="{{ cat.key }}_active_{{ i }}" value="1" {% if row.active %}checked{% endif %}>
+          Aktiv
+        </label>
+        <label class="can-inline">CAN-ID
+          <input type="text" name="{{ cat.key }}_can_id_{{ i }}" value="{{ row.can_id }}" placeholder="0x0 (leer = Block unbenutzt)">
+        </label>
         {% if cat.is_analog %}
-        <td>
-          <select name="{{ cat.key }}_value_bytes_{{ i }}" style="margin-bottom:0;">
-            <option value="2" {% if cat.rows[i].value_bytes == 2 %}selected{% endif %}>2 Byte</option>
-            <option value="4" {% if cat.rows[i].value_bytes == 4 %}selected{% endif %}>4 Byte</option>
+        <label class="can-inline">Wertgröße
+          <select name="{{ cat.key }}_value_bytes_{{ i }}">
+            <option value="2" {% if row.value_bytes == 2 %}selected{% endif %}>2 Byte (4 Slots)</option>
+            <option value="4" {% if row.value_bytes == 4 %}selected{% endif %}>4 Byte (2 Slots)</option>
           </select>
-        </td>
+        </label>
         {% endif %}
-        <td><input type="text" name="{{ cat.key }}_channels_{{ i }}" value="{{ cat.rows[i].channels_text }}" placeholder="kanal1, kanal2, ..." style="margin-bottom:0;"></td>
-      </tr>
-      {% endfor %}
-    </table>
+      </div>
+
+      <div class="can-slots">
+        {% for slot in row.slots %}
+        <div class="can-slot">
+          <span class="can-slot-label">Slot {{ loop.index }}</span>
+          {% if cat.allow_forward %}
+          <input type="text" name="{{ cat.key }}_slot_topic_{{ i }}_{{ loop.index0 }}" value="{{ slot.topic }}" placeholder="uvr_kanalname">
+          <select name="{{ cat.key }}_slot_forward_{{ i }}_{{ loop.index0 }}">
+            <option value="" {% if not slot.forward %}selected{% endif %}>— keine Weiterleitung —</option>
+            {% for k in available_set_keys %}
+            <option value="{{ k }}" {% if slot.forward == k %}selected{% endif %}>→ {{ k }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <select name="{{ cat.key }}_slot_value_{{ i }}_{{ loop.index0 }}">
+            <option value="" {% if not slot.value %}selected{% endif %}>— unbelegt —</option>
+            {% for s in available_subtopics %}
+            <option value="{{ s }}" {% if slot.value == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
     {% endfor %}
 
     <button type="submit" onclick="return confirm('CAN-Einstellungen speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
@@ -78,4 +81,16 @@
   <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
 </div>
 {% endif %}
+
+<style>
+  .can-block { border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; background: #fafafa; }
+  .can-block-inactive { opacity: 0.55; }
+  .can-block-header { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-bottom: 0.6rem; }
+  .can-inline { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; margin: 0; }
+  .can-inline input[type=text], .can-inline select { margin-bottom: 0; width: auto; }
+  .can-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.5rem; }
+  .can-slot { display: flex; flex-direction: column; gap: 0.2rem; }
+  .can-slot-label { font-size: 0.75rem; color: #666; font-weight: 600; }
+  .can-slot select, .can-slot input[type=text] { margin-bottom: 0.3rem; }
+</style>
 {% endblock %}
