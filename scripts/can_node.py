@@ -12,6 +12,10 @@ Aufgaben (siehe README Abschnitt 3):
   - Custom CAN-Variablen (config/can_variables.json): komplett unabhängig von
     vcontrold/vito.xml. Home Assistant kann sie direkt per MQTT (MQTT_TOPIC_CMD_UVR)
     setzen, der Wert geht direkt per CAN an die UVR -- die Vitotronic ist nicht beteiligt.
+  - Meldet den Pi dauerhaft per CANopen-Heartbeat als eigenen Knoten an (own_node_number),
+    damit er in einer CAN-Bus-Übersicht (z.B. TA-CMI) als vorhandenes Gerät sichtbar ist
+    (siehe README Abschnitt 3.3 -- Geräteerkennung selbst bleibt unvollständig, TA-eigenes
+    Protokoll dafür nicht reverse-engineert).
 
 Läuft als eigener systemd-Dienst (can-node.service), getrennt vom Orchestrator,
 damit ein Fehler in der CAN-Dekodierung nicht die Vcontrold-Zyklen/MQTT-Befehle
@@ -26,6 +30,7 @@ import subprocess
 import sys
 
 import can
+import canopen
 
 import ha_discovery
 import ta_can_protocol as proto
@@ -138,6 +143,20 @@ def main() -> None:
         print(f"Konnte {CAN_INTERFACE} nicht öffnen: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # Eigener, zweiter CAN-Socket nur für den Heartbeat -- getrennt vom Haupt-`bus`, damit sich
+    # dessen Notifier-Thread (canopen-Bibliothek) nicht mit der direkten `for msg in bus`-Schleife
+    # unten um eingehende Frames streitet (SocketCAN erlaubt beliebig viele Sockets pro Interface,
+    # jeder bekommt unabhängig eine Kopie jedes Frames). Meldet den Pi per Bootup+laufendem
+    # Heartbeat als CANopen-Knoten an (siehe README Abschnitt 3.3) -- ohne das taucht der Pi in
+    # keiner CAN-Bus-Übersicht (z.B. TA-CMI) als vorhandenes Gerät auf.
+    own_node_number = mapping.get("own_node_number", 1)
+    heartbeat_bus = can.interface.Bus(channel=CAN_INTERFACE, interface="socketcan")
+    heartbeat_network = canopen.Network()
+    heartbeat_network.bus = heartbeat_bus
+    heartbeat_network.notifier = can.Notifier(heartbeat_bus, heartbeat_network.listeners)
+    own_node = ta.create_own_node(heartbeat_network, own_node_number)
+    print(f"Heartbeat gestartet (eigene Node-ID {own_node_number})")
+
     rx_analog_by_id = {
         int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", []) if b.get("active", True)
     }
@@ -246,6 +265,9 @@ def main() -> None:
                     file=sys.stderr,
                 )
     finally:
+        own_node.nmt.stop_heartbeat()
+        heartbeat_network.notifier.stop()
+        heartbeat_bus.shutdown()
         bus.shutdown()
         client.loop_stop()
         client.disconnect()
