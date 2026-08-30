@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}MQTT-Einstellungen - vcontrold UI{% endblock %}
+{% block content %}
+<h1>MQTT-Einstellungen</h1>
+
+<div class="card">
+  <p>Bearbeitet <code>config/mqtt.env</code>, die von allen MQTT-Bridges (vcontrold→MQTT,
+     CAN↔MQTT, Command-Listener) genutzt wird. Beim Speichern werden bereits laufende
+     Bridge-Dienste automatisch neu gestartet, damit die neuen Werte greifen.</p>
+
+  <form method="post">
+    {% for key, label, required in fields %}
+    <label for="{{ key }}">{{ label }}{% if required %} *{% endif %}</label>
+    <input
+      type="{{ 'password' if key == 'MQTT_PASSWORD' else 'text' }}"
+      id="{{ key }}"
+      name="{{ key }}"
+      value="{{ current.get(key, '') }}"
+      {% if key == 'MQTT_PASSWORD' %}autocomplete="new-password"{% endif %}>
+    {% endfor %}
+
+    <button type="submit" name="action" value="test">Verbindung testen</button>
+    <button type="submit" name="action" value="save" onclick="return confirm('MQTT-Konfiguration speichern und laufende Bridge-Dienste neu starten?');">Speichern &amp; Dienste neu starten</button>
+  </form>
+</div>
+
+{% if test_result %}
+<div class="card">
+  <h2>Verbindungstest</h2>
+  <p class="{{ 'message-ok' if test_result.ok else 'message-error' }}">
+    {{ 'Verbunden' if test_result.ok else 'Fehlgeschlagen' }} ({{ test_result.detail }})
+  </p>
+</div>
+{% endif %}
+
+{% if message %}
+<div class="card">
+  <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+</div>
+{% endif %}
+{% endblock %}

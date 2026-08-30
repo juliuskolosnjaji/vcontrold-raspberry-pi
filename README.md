@@ -161,12 +161,13 @@ sudo systemctl start mqtt-command-listener
 
 `homeassistant/configuration_snippet.yaml` enthält Beispiel-`mqtt: sensor:` und `mqtt: number:`/`climate:`-Einträge für die veröffentlichten Topics. In `configuration.yaml` von Home Assistant einbinden oder per MQTT-Discovery automatisch erkennen lassen (Discovery-Variante ist im Snippet als Kommentar skizziert).
 
-## 6. Web-UI (Konsole, Config-Import, Diagnose, CAN-Sniffer)
+## 6. Web-UI (Konsole, Config-Import, MQTT-Einstellungen, Diagnose, CAN-Sniffer)
 
 Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
 
 - **Konsole**: Getter/Setter aus deiner Geräte-XML per Dropdown auswählen oder frei eingeben, direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
 - **Config-Import**: Geräte-XML hochladen, Backup der bisherigen `/etc/vcontrold.xml` wird automatisch angelegt, danach `systemctl restart vcontrold`.
+- **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Bridge-Dienste (`can-to-mqtt`, `mqtt-to-can`, `mqtt-command-listener`, `vcontrold-to-mqtt.timer`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
 - **Diagnose**: Status aller Dienste (vcontrold, can-to-mqtt, mqtt-to-can, mqtt-command-listener, can0-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — hilft dabei, das UVR-Protokoll für `FRAME_MAP`/`COMMAND_MAP` empirisch zu ermitteln.
 

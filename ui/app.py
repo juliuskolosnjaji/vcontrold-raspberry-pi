@@ -160,6 +160,99 @@ def config_import():
     return render_template("config_import.html", cfg=cfg, message=message, message_ok=message_ok)
 
 
+MQTT_FIELDS = [
+    ("MQTT_HOST", "Broker-Host", True),
+    ("MQTT_PORT", "Broker-Port", True),
+    ("MQTT_USERNAME", "Benutzername", False),
+    ("MQTT_PASSWORD", "Passwort", False),
+    ("MQTT_CLIENT_ID_PREFIX", "Client-ID-Präfix", True),
+    ("MQTT_TOPIC_HEIZUNG", "Topic-Präfix Heizung", True),
+    ("MQTT_TOPIC_UVR", "Topic-Präfix UVR", True),
+    ("MQTT_TOPIC_CMD_HEIZUNG", "Topic-Präfix Heizungs-Commands", True),
+    ("MQTT_TOPIC_CMD_UVR", "Topic-Präfix UVR-Commands", True),
+]
+
+# Dienste, die mqtt.env nutzen und nach einer Änderung neu gestartet werden sollten
+MQTT_DEPENDENT_SERVICES = [
+    "can-to-mqtt",
+    "mqtt-to-can",
+    "mqtt-command-listener",
+    "vcontrold-to-mqtt.timer",
+]
+
+
+def write_env(path: pathlib.Path, values: dict) -> None:
+    lines = [f"{key}={value}" for key, value in values.items()]
+    path.write_text("\n".join(lines) + "\n")
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings():
+    message = None
+    message_ok = None
+    test_result = None
+    current = load_env(MQTT_ENV_PATH)
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+
+        if action == "save":
+            new_values = dict(current)
+            for key, _label, required in MQTT_FIELDS:
+                value = request.form.get(key, "").strip()
+                if required and not value:
+                    message, message_ok = f"Feld '{key}' darf nicht leer sein.", False
+                    break
+                new_values[key] = value
+            else:
+                MQTT_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+                write_env(MQTT_ENV_PATH, new_values)
+                current = new_values
+
+                import subprocess
+
+                restarted, failed = [], []
+                for service in MQTT_DEPENDENT_SERVICES:
+                    status = diagnostics.service_status(service)
+                    if status["state"] not in ("active",):
+                        continue  # nur laufende Dienste neu starten, nicht versehentlich welche aktivieren
+                    result = subprocess.run(
+                        ["systemctl", "restart", service], capture_output=True, text=True, timeout=15
+                    )
+                    (restarted if result.returncode == 0 else failed).append(service)
+
+                message = "MQTT-Konfiguration gespeichert."
+                if restarted:
+                    message += f" Neu gestartet: {', '.join(restarted)}."
+                if failed:
+                    message += f" Fehler beim Neustart von: {', '.join(failed)}."
+                message_ok = not failed
+
+        elif action == "test":
+            new_values = dict(current)
+            for key, _label, _required in MQTT_FIELDS:
+                new_values[key] = request.form.get(key, "").strip()
+            if new_values.get("MQTT_HOST"):
+                test_result = diagnostics.mqtt_connectivity(
+                    new_values["MQTT_HOST"],
+                    int(new_values.get("MQTT_PORT") or 1883),
+                    new_values.get("MQTT_USERNAME") or None,
+                    new_values.get("MQTT_PASSWORD") or None,
+                )
+            else:
+                test_result = {"ok": False, "detail": "Kein Broker-Host angegeben."}
+            current = new_values
+
+    return render_template(
+        "settings.html",
+        fields=MQTT_FIELDS,
+        current=current,
+        message=message,
+        message_ok=message_ok,
+        test_result=test_result,
+    )
+
+
 @app.route("/diagnostics")
 def diagnostics_page():
     cfg = get_ui_config()
