@@ -81,7 +81,15 @@ AccessType=ro
 DefaultValue=0
 
 [OptionalObjects]
-SupportedObjects=0
+SupportedObjects=1
+1=0x1008
+
+[1008]
+ParameterName=Manufacturer Device Name
+ObjectType=0x7
+DataType=0x0009
+AccessType=ro
+DefaultValue=Raspberry Pi
 
 [ManufacturerObjects]
 SupportedObjects=0
