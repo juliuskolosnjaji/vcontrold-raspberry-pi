@@ -8,6 +8,11 @@
      Werte auf welchen CAN-IDs/Slots gesendet bzw. empfangen werden. Die CAN-IDs sind erst nach
      dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen (siehe README
      Abschnitt 3) bekannt — bis dahin einfach leer lassen.</p>
+  <p><strong>Warum max. 4 (bzw. 2 bei 4 Byte) Slots pro Block:</strong> ein CAN-Frame hat hart
+     maximal 8 Byte Nutzlast — das ist eine physikalische Grenze des CAN-Protokolls, keine
+     UI-Einschränkung. Für mehr Werte insgesamt einfach eine weitere Zeile mit eigener CAN-ID
+     anlegen (bis zu {{ num_rows|length }} Zeilen pro Kategorie = bis zu {{ num_rows|length * 4 }}
+     Analogwerte bzw. {{ num_rows|length * 16 }} Digitalwerte).</p>
 
   <form method="post">
     <label for="bitrate">CAN-Bitrate</label>

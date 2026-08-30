@@ -316,7 +316,7 @@ def settings():
     )
 
 
-CAN_BLOCK_ROWS = 8  # Anzahl editierbarer Zeilen (CAN-IDs) pro Block-Kategorie
+CAN_BLOCK_ROWS = 16  # Anzahl editierbarer Zeilen (CAN-IDs) pro Block-Kategorie
 MAX_ANALOG_SLOTS = 4   # deckt den 2-Byte-Fall ab; bei 4 Byte werden nur die ersten 2 genutzt
 MAX_DIGITAL_SLOTS = 16
 
