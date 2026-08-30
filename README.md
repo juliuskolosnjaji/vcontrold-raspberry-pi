@@ -6,7 +6,7 @@ Auf einem frisch aufgesetzten Raspberry Pi OS Lite 64-bit (Bookworm) per SSH:
 
 ```bash
 sudo apt update && sudo apt install -y git
-git clone https://github.com/<dein-github-user>/vcontrold-raspberry-pi.git
+git clone https://github.com/juliuskolosnjaji/vcontrold-raspberry-pi.git
 cd vcontrold-raspberry-pi
 sudo bash install.sh
 ```
