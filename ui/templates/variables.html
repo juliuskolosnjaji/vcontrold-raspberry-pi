@@ -43,7 +43,7 @@
       {% for row in rows %}
       <tr class="{{ 'no-set' if not row.set }}">
         <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
-        <td>{{ row.get or "—" }}</td>
+        <td>{{ row['get'] or "—" }}</td>
         <td>{{ row.set or "—" }}</td>
         <td>
           <select name="var_cycle_{{ row.name }}">
