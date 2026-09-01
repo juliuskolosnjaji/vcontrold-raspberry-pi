@@ -28,8 +28,6 @@ import json
 import pathlib
 import subprocess
 import sys
-import threading
-import time
 
 import can
 import canopen
@@ -80,50 +78,45 @@ def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
         client.publish(f"{uvr_topic_prefix}/{channel}", value, retain=True)
 
 
-def start_sdo_record_polling(network: canopen.Network, sdo_config: dict | None, client, uvr_topic_prefix: str) -> None:
-    """Fragt periodisch den bestätigten UVR-Datensatz (Objekt 0x4FF4:04, siehe
-    ta_canopen.decode_datensatz) per SDO ab und published die per config/can_mapping.json's
-    'sdo_record.slots' benannten Werte -- im Unterschied zu rx_analog_blocks/rx_digital_blocks
-    (die auf von der UVR aktiv gesendete Netzwerkausgang-Frames warten) braucht dieser Weg
-    KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR, siehe README Abschnitt 3.3.
-
-    Nutzt dieselbe canopen.Network (und damit denselben zweiten CAN-Socket) wie der
-    Heartbeat -- ein SDO-Request/Response-Zyklus blockiert kurz, läuft aber in einem
-    eigenen Thread und stört daher weder den Heartbeat noch die separate Haupt-Lese-
-    schleife (eigener Thread, eigener Socket) unten in main()."""
+def load_sdo_slots(sdo_config: dict | None) -> dict[int, object]:
+    """Liest config/can_mapping.json's 'sdo_record.slots' (Slot-Nummer 1-21 -> Kanalname)."""
     if not sdo_config:
-        return
-    uvr_node_id = sdo_config.get("uvr_node_id")
-    if uvr_node_id is None:
-        print("sdo_record.uvr_node_id fehlt in can_mapping.json, SDO-Datensatz-Polling deaktiviert", file=sys.stderr)
-        return
+        return {}
     slots = {int(slot): channel for slot, channel in sdo_config.get("slots", {}).items()}
     if not slots:
-        print("sdo_record.slots ist leer, SDO-Datensatz-Polling deaktiviert", file=sys.stderr)
-        return
-    interval = sdo_config.get("poll_interval_seconds", 30)
-    sdo_node = network.add_node(uvr_node_id, ta.EDS_PATH)
+        print("sdo_record.slots ist leer, SDO-Datensatz-Auswertung liefert keine Werte", file=sys.stderr)
+    return slots
 
-    def poll_loop():
-        while True:
-            try:
-                payload = sdo_node.sdo.upload(ta.UVR_DATENSATZ_OBJ, ta.UVR_DATENSATZ_SUBINDEX)
-                record = ta.decode_datensatz(payload)
-                for slot, channel in slots.items():
-                    index = slot - 1
-                    if 0 <= index < len(record["values"]):
-                        publish_rx_value(client, uvr_topic_prefix, channel, record["values"][index])
-                    else:
-                        print(
-                            f"sdo_record: Slot {slot} außerhalb des Datensatzes ({len(record['values'])} Werte)",
-                            file=sys.stderr,
-                        )
-            except Exception as exc:
-                print(f"SDO-Datensatz-Poll fehlgeschlagen (Node {uvr_node_id}): {exc}", file=sys.stderr)
-            time.sleep(interval)
 
-    threading.Thread(target=poll_loop, daemon=True).start()
-    print(f"SDO-Datensatz-Polling gestartet (Node {uvr_node_id}, alle {interval}s, {len(slots)} Slot(s) gemappt)")
+def handle_sdo_record_frame(
+    msg: can.Message, sdo_trackers: dict, sdo_slots: dict, sdo_filter_node: int | None, client, uvr_topic_prefix: str
+) -> bool:
+    """Passives Mitlesen des UVR-Datensatzes (Objekt 0x4FF4:04) aus dem ohnehin laufenden
+    CAN-Empfang, statt einer eigenen aktiven SDO-Anfrage (siehe ta_canopen.process_sdo_frame
+    für die Begründung -- an echter Hardware hat sich gezeigt, dass die im CMI angezeigte
+    UVR-Node-ID bei aktiver Anfrage "Object does not exist" liefern kann, während ein bereits
+    vorhandener zweiter Master denselben Datensatz unter einer anderen Node-ID erfolgreich und
+    laufend abfragt -- passives Mitlesen funktioniert unabhängig von der korrekten Node-ID und
+    kollidiert nie mit fremden aktiven Anfragen). Gibt True zurück, wenn das Frame als
+    SDO-Server-Antwort erkannt wurde (auch wenn es nur ein Zwischen-Segment war), sonst False."""
+    result = ta.process_sdo_frame(msg.arbitration_id, msg.data, sdo_trackers)
+    if not (ta.SDO_SERVER_TO_CLIENT_BASE <= msg.arbitration_id < ta.SDO_SERVER_TO_CLIENT_BASE + 0x80):
+        return False
+    if result is None:
+        return True
+    node_id, record = result
+    if sdo_filter_node is not None and node_id != sdo_filter_node:
+        return True
+    for slot, channel in sdo_slots.items():
+        index = slot - 1
+        if 0 <= index < len(record["values"]):
+            publish_rx_value(client, uvr_topic_prefix, channel, record["values"][index])
+        else:
+            print(
+                f"sdo_record: Slot {slot} außerhalb des Datensatzes ({len(record['values'])} Werte)",
+                file=sys.stderr,
+            )
+    return True
 
 
 def load_mapping() -> dict:
@@ -219,7 +212,13 @@ def main() -> None:
     own_node = ta.create_own_node(heartbeat_network, own_node_number)
     print(f"Heartbeat gestartet (eigene Node-ID {own_node_number})")
 
-    start_sdo_record_polling(heartbeat_network, mapping.get("sdo_record"), client, uvr_topic_prefix)
+    sdo_config = mapping.get("sdo_record")
+    sdo_slots = load_sdo_slots(sdo_config)
+    sdo_filter_node = sdo_config.get("uvr_node_id") if sdo_config else None
+    sdo_trackers: dict = {}
+    if sdo_slots:
+        node_desc = f"nur Node {sdo_filter_node}" if sdo_filter_node is not None else "jede Node-ID"
+        print(f"Passives SDO-Datensatz-Parsing aktiv ({node_desc}, {len(sdo_slots)} Slot(s) gemappt)")
 
     rx_analog_by_id = {
         int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", []) if b.get("active", True)
@@ -337,6 +336,11 @@ def main() -> None:
                     continue
                 for channel, value in zip(channels, values):
                     publish_rx_value(client, uvr_topic_prefix, channel, "ON" if value else "OFF")
+
+            elif sdo_slots and handle_sdo_record_frame(
+                msg, sdo_trackers, sdo_slots, sdo_filter_node, client, uvr_topic_prefix
+            ):
+                pass  # SDO-Server-Antwort (0x580+Node) erkannt und verarbeitet, kein unbekanntes Frame
 
             else:
                 print(

@@ -346,25 +346,44 @@ nicht passt.
 
 **Lese-Pfad (UVR → Pi), produktiv über `can_node.py`: `config/can_mapping.json`s `sdo_record`
 integriert das oben beschriebene, bestätigte Datensatz-Auslesen (`0x4FF4:04`) direkt in den
-`can-node`-Dienst, statt es nur manuell per `canopen_test.py --read-record` zu testen:
+`can-node`-Dienst -- **passiv mitgelesen**, nicht aktiv abgefragt:
 
 ```json
 "sdo_record": {
-  "uvr_node_id": 10,
-  "poll_interval_seconds": 30,
+  "uvr_node_id": null,
   "slots": {"1": "uvr_vorlauftemperatur", "19": "TempKist", "20": "TempWWist"}
 }
 ```
 
-`slots` bildet Slot-Nummer (1-21, siehe Byte-Layout oben) auf einen Kanalnamen ab; `can_node.py`
-fragt den Datensatz alle `poll_interval_seconds` Sekunden per SDO ab (eigener Hintergrund-Thread,
-nutzt denselben zweiten CAN-Socket wie der Heartbeat) und published jeden gemappten Slot unter
-`uvr/<name>` (retained) -- inklusive automatischer Home-Assistant-Discovery, genau wie
-`rx_analog_blocks`/`rx_digital_blocks`. **Vorteil gegenüber `rx_analog_blocks`/`rx_digital_blocks`:**
-braucht keine "CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per Sniffer ermittelten
-CAN-IDs -- nur die UVR-Node-ID (siehe Abschnitt 3.3) und die gewünschten Slot-Nummern. Welcher Slot
-welchem UVR-Kanal entspricht, per `canopen_test.py --read-record --uvr-node-id <N>` oder
-`sdo_sniffer.py` ermitteln (Slot 1 = Analogausgang 1 ist für dieses Gerät bereits bestätigt).
+`slots` bildet Slot-Nummer (1-21, siehe Byte-Layout oben) auf einen Kanalnamen ab. `can_node.py`
+liest den Datensatz nicht aktiv per eigener SDO-Anfrage (wie `canopen_test.py --read-record`),
+sondern setzt die Block-Transfer-Segmente direkt aus dem ohnehin laufenden CAN-Empfang zusammen,
+sobald irgendein anderer Master (z.B. das CMI) den Datensatz sowieso abfragt -- und published
+jeden gemappten Slot unter `uvr/<name>` (retained), inklusive automatischer Home-Assistant-
+Discovery, genau wie `rx_analog_blocks`/`rx_digital_blocks`.
+
+**Warum passiv statt aktiv:** An echter Hardware hat sich gezeigt, dass eine aktive Anfrage an die
+im CMI angezeigte UVR-Node-ID (`--uvr-node-id 10`) mit `Object does not exist` (0x06020000)
+scheitern kann, während `sdo_sniffer.py` zeitgleich zeigt, dass ein bereits vorhandener zweiter
+Master denselben Datensatz unter einer **anderen** Node-ID (z.B. 65) laufend erfolgreich abfragt --
+die tatsächliche CANopen-Node-ID des antwortenden Geräts muss also nicht mit der im CMI-Menü
+angezeigten Nummer übereinstimmen. Passives Mitlesen umgeht dieses Problem komplett: es
+funktioniert unabhängig davon, welche Node-ID tatsächlich antwortet, und kollidiert nie mit der
+aktiven Abfrage eines anderen Masters (das in Abschnitt 3.3 weiter oben beschriebene
+Kollisionsrisiko aktiver Anfragen entfällt dadurch für diesen Lesepfad vollständig).
+
+`uvr_node_id` ist deshalb nur ein **optionaler** Filter -- `null`/weggelassen (empfohlen)
+akzeptiert den Datensatz von jeder Node-ID, eine Zahl beschränkt auf genau diese (z.B. falls
+mehrere Geräte auf dem Bus zufällig denselben Objektindex nutzen). Welche Node-ID(s) den
+Datensatz tatsächlich senden, vorab mit `sdo_sniffer.py` prüfen:
+
+```bash
+venv/bin/python scripts/sdo_sniffer.py
+```
+
+**Vorteil gegenüber `rx_analog_blocks`/`rx_digital_blocks`:** braucht keine
+"CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per Sniffer ermittelten CAN-IDs --
+nur die gewünschten Slot-Nummern (Slot 1 = Analogausgang 1 ist für dieses Gerät bereits bestätigt).
 
 **Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
 reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die Digital-Ausgang-

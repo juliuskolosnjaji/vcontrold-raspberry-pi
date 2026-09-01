@@ -114,6 +114,86 @@ def decode_datensatz(payload: bytes) -> dict:
     }
 
 
+# Passives Mitschneiden statt aktiver SDO-Anfrage (siehe README Abschnitt 3.3): an echter
+# Hardware hat sich gezeigt, dass eine aktive Anfrage an die im CMI angezeigte Node-ID der
+# UVR mit "Object does not exist" scheitern kann, während ein bereits vorhandener zweiter
+# Master (CMI) denselben Datensatz unter einer ANDEREN Node-ID laufend erfolgreich abfragt --
+# vermutlich weil die tatsächliche CANopen-Node-ID des antwortenden Geräts von der im
+# CMI-Menü angezeigten UVR-Nummer abweicht. Passives Mitlesen des ohnehin laufenden
+# Block-Transfers ist daher robuster: funktioniert unabhängig von der korrekten Node-ID und
+# kollidiert nie mit der aktiven Abfrage eines anderen Masters (siehe sdo_sniffer.py, aus
+# dem diese Logik stammt).
+SDO_SERVER_TO_CLIENT_BASE = 0x580  # Server (UVR) -> Client (Master), Node-ID = can_id - Basis
+_CMD_BLOCK_INITIATE_RESPONSE = 0xC6
+_CMD_BLOCK_END_RESPONSE = 0xC1
+
+
+class _BlockTransferTracker:
+    """Setzt CiA-301-Block-Upload-Segmente (Server -> Client) zu einem kompletten Datensatz
+    zusammen. Ein Tracker pro beobachtetem Node, siehe process_sdo_frame()."""
+
+    def __init__(self):
+        self.active = False
+        self.declared_size = None
+        self.segments: dict[int, bytes] = {}
+
+    def start(self, data: bytes) -> None:
+        (self.declared_size,) = struct.unpack("<I", data[4:8])
+        self.segments = {}
+        self.active = True
+
+    def reset(self) -> None:
+        self.active = False
+        self.segments = {}
+        self.declared_size = None
+
+    def add_segment(self, data: bytes) -> bytes | None:
+        seq_byte = data[0]
+        is_last = bool(seq_byte & 0x80)
+        seq = seq_byte & 0x7F
+        self.segments[seq] = data[1:8]
+        if not is_last:
+            return None
+        payload = b"".join(self.segments[s] for s in sorted(self.segments))
+        if self.declared_size is not None:
+            payload = payload[: self.declared_size]
+        self.reset()
+        return payload
+
+
+def process_sdo_frame(can_id: int, data: bytes, trackers: dict) -> tuple[int, dict] | None:
+    """Nimmt ein rohes, bereits empfangenes CAN-Frame entgegen (KEINE eigene SDO-Anfrage) und
+    versucht, es als Teil eines Block-Transfers für den UVR-Datensatz (Objekt 0x4FF4:04)
+    zusammenzusetzen. `trackers` ist ein vom Aufrufer gehaltenes dict[node_id,
+    _BlockTransferTracker], das zwischen Aufrufen erhalten bleiben muss. Gibt (node_id, record)
+    zurück, sobald ein vollständiger Datensatz zusammengesetzt und dekodiert wurde (record wie
+    von decode_datensatz()), sonst None."""
+    if not (SDO_SERVER_TO_CLIENT_BASE <= can_id < SDO_SERVER_TO_CLIENT_BASE + 0x80):
+        return None
+    node_id = can_id - SDO_SERVER_TO_CLIENT_BASE
+    cmd = data[0] if data else None
+    tracker = trackers.setdefault(node_id, _BlockTransferTracker())
+
+    if cmd == _CMD_BLOCK_INITIATE_RESPONSE:
+        index = data[1] | (data[2] << 8)
+        subindex = data[3]
+        if index == UVR_DATENSATZ_OBJ and subindex == UVR_DATENSATZ_SUBINDEX:
+            tracker.start(data)
+        else:
+            tracker.reset()  # anderes Objekt auf demselben Node, für uns nicht relevant
+        return None
+
+    if tracker.active and cmd is not None and 0x01 <= (cmd & 0x7F) <= 0x7F and cmd != _CMD_BLOCK_END_RESPONSE:
+        payload = tracker.add_segment(data)
+        if payload is None:
+            return None
+        try:
+            return node_id, decode_datensatz(payload)
+        except ValueError:
+            return None
+    return None
+
+
 # BESTÄTIGT gegen echte Hardware (candump während CMI eine "CAN-Analogausgang"-Detailseite
 # lud): Objekt 0x2050, Subindex = Ausgangsnummer - 1 (0-basiert), liefert genau einen
 # CAN-Analogausgang als SEGMENTIERTE (nicht expedited, nicht Block-) SDO-Antwort, 6 Byte,

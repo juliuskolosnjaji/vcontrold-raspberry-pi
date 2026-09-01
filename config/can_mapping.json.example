@@ -40,10 +40,9 @@
     }
   ],
 
-  "_hinweis_sdo_record": "Bestätigter, aktiv abgefragter Weg (siehe README Abschnitt 3.3, ta_canopen.decode_datensatz): liest periodisch den 98-Byte-Datensatz (Objekt 0x4FF4:04) von der UVR und published die per 'slots' benannten Werte -- braucht KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR (anders als rx_analog_blocks/rx_digital_blocks oben, die auf von der UVR aktiv gesendete Frames warten). 'slots' bildet Slot-Nummer (1-21, wie in canopen_test.py --read-record ausgegeben) auf einen Kanalnamen ab -- welcher Slot welchem UVR-Kanal entspricht, per candump/canopen_test.py ermitteln (Slot 1 = Analogausgang 1 ist bestätigt).",
+  "_hinweis_sdo_record": "Bestätigter, PASSIV mitgelesener Weg (siehe README Abschnitt 3.3, ta_canopen.process_sdo_frame): can_node.py liest den 98-Byte-Datensatz (Objekt 0x4FF4:04) direkt aus dem CAN-Empfang mit, sobald irgendein anderer Master (z.B. das CMI) ihn ohnehin abfragt -- braucht KEINE eigene aktive SDO-Anfrage und KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR (anders als rx_analog_blocks/rx_digital_blocks oben). 'slots' bildet Slot-Nummer (1-21, wie in canopen_test.py --read-record ausgegeben) auf einen Kanalnamen ab. 'uvr_node_id' ist ein OPTIONALER Filter -- weglassen/null akzeptiert den Datensatz von jeder Node-ID (empfohlen, siehe unten), eine Zahl beschränkt auf genau diese. Wichtig: die im CMI angezeigte UVR-Node-ID ist nicht zwingend dieselbe Node-ID, unter der der Datensatz tatsächlich auf dem Bus läuft -- welche Node-ID(s) den Datensatz senden, per sdo_sniffer.py ermitteln (Slot 1 = Analogausgang 1 ist bestätigt).",
   "sdo_record": {
-    "uvr_node_id": 10,
-    "poll_interval_seconds": 30,
+    "uvr_node_id": null,
     "slots": {
       "1": "uvr_vorlauftemperatur"
     }
