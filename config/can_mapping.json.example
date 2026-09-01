@@ -10,36 +10,6 @@
     "digital": ["BrennerStatus", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
   },
 
-  "tx_analog_blocks": [
-    {
-      "can_id": "0x0",
-      "value_bytes": 2,
-      "channels": ["aussentemperatur", "kesseltemperatur_ist", "vorlauftemperatur", "warmwassertemperatur"]
-    }
-  ],
-
-  "tx_digital_blocks": [
-    {
-      "can_id": "0x0",
-      "channels": ["brenner_status", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
-    }
-  ],
-
-  "rx_analog_blocks": [
-    {
-      "can_id": "0x0",
-      "value_bytes": 2,
-      "channels": ["uvr_kollektortemperatur", "uvr_speichertemperatur", null, null]
-    }
-  ],
-
-  "rx_digital_blocks": [
-    {
-      "can_id": "0x0",
-      "channels": ["uvr_pumpe_status", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
-    }
-  ],
-
   "_hinweis_rx_ta_analog_outputs": "EMPFOHLENER Weg, um echte 'CAN-Analogausgänge' der UVR zu lesen (bestätigt an echter Hardware per candump, siehe README Abschnitt 3.4): can_node.py hört auf EINER CAN-ID, die sich alle Ausgänge teilen (per Sniffer ermitteln -- Wert am UVR-Display auf einen auffälligen Testwert setzen, candump nach dem passenden Byte-Muster durchsuchen). Byte 1 des Frames unterscheidet die Ausgänge (0-basiert = Ausgangsnummer-1), Byte 4-7 ist der Wert (4-Byte signed Little-Endian, /10 skaliert). 'outputs' bildet Ausgangsnummer (1-16, wie am UVR-Display beschriftet) auf einen Kanalnamen ab. WICHTIG: Die UVR sendet nur bei Wertänderung über der pro Ausgang eingestellten Schwelle ('Sendebedingung' am UVR-Display) bzw. spätestens nach der 'Intervallzeit' (oft mehrere Minuten) -- kein fester Takt, also beim Testen etwas Geduld oder den Wert aktiv ändern.",
   "rx_ta_analog_outputs": {
     "can_id": "0x0",
@@ -62,5 +32,5 @@
     "slots": {}
   },
 
-  "_beispiel_forward_as_set": "Ein rx-Kanal kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings in rx_analog_blocks/rx_digital_blocks."
+  "_beispiel_forward_as_set": "Ein Kanal in rx_ta_analog_outputs/rx_ta_digital_outputs/sdo_record kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings."
 }

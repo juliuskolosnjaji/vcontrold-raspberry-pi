@@ -210,16 +210,6 @@ def publish_discovery(
         client.publish(topic, json.dumps(config), retain=True)
 
 
-def _rx_channel_names(blocks: list) -> set:
-    names = set()
-    for block in blocks:
-        for channel in block.get("channels", []):
-            if channel is None:
-                continue
-            names.add(channel["topic"] if isinstance(channel, dict) else channel)
-    return names
-
-
 def publish_can_discovery(
     client, discovery_prefix: str, can_mapping: dict, topic_uvr: str, topic_cmd_uvr: str, can_variables: dict = None
 ) -> None:
@@ -230,9 +220,9 @@ def publish_can_discovery(
       - Custom CAN-Variablen aus config/can_variables.json: komplett unabhängig von
         vito.xml, als Number/Select-Entity mit command_topic -> Home Assistant kann sie
         direkt lesen UND schreiben, der Wert geht per CAN direkt an die UVR.
-      - Alle übrigen CAN-Empfangs-Kanäle (rx_analog_blocks/rx_digital_blocks) als reine
-        Sensoren -- diese haben keine Entsprechung in vito.xml und würden sonst nie
-        automatisch als Home-Assistant-Entity auftauchen.
+      - Alle übrigen CAN-Empfangs-Kanäle (sdo_record, rx_ta_analog_outputs,
+        rx_ta_digital_outputs) als reine Sensoren -- diese haben keine Entsprechung in
+        vito.xml und würden sonst nie automatisch als Home-Assistant-Entity auftauchen.
     """
     reload_display_names()
     can_variables = can_variables or {}
@@ -256,10 +246,9 @@ def publish_can_discovery(
         client.publish(topic, json.dumps(config), retain=True)
         published.add(key)
 
-    names = _rx_channel_names(can_mapping.get("rx_analog_blocks", []))
-    names |= _rx_channel_names(can_mapping.get("rx_digital_blocks", []))
-    # sdo_record.slots-Werte sind wie rx_*_blocks-Kanäle entweder ein reiner Name oder ein
+    # sdo_record.slots/rx_ta_*_outputs.outputs-Werte sind entweder ein reiner Name oder ein
     # {"topic": ..., "forward_as_set": ...}-Objekt (siehe can_node.py/publish_rx_value).
+    names = set()
     for channel in can_mapping.get("sdo_record", {}).get("slots", {}).values():
         names.add(channel["topic"] if isinstance(channel, dict) else channel)
     for channel in can_mapping.get("rx_ta_analog_outputs", {}).get("outputs", {}).values():

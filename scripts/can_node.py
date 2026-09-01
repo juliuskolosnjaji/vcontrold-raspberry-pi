@@ -224,13 +224,6 @@ def main() -> None:
         node_desc = f"nur Node {sdo_filter_node}" if sdo_filter_node is not None else "jede Node-ID"
         print(f"Passives SDO-Datensatz-Parsing aktiv ({node_desc}, {len(sdo_slots)} Slot(s) gemappt)")
 
-    rx_analog_by_id = {
-        int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", []) if b.get("active", True)
-    }
-    rx_digital_by_id = {
-        int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", []) if b.get("active", True)
-    }
-
     rx_ta_outputs_config = mapping.get("rx_ta_analog_outputs")
     rx_ta_can_id = int(rx_ta_outputs_config["can_id"], 0) if rx_ta_outputs_config else None
     rx_ta_output_channels = (
@@ -264,22 +257,6 @@ def main() -> None:
             bus.send(message, timeout=1.0)
         except can.CanError as exc:
             print(f"CAN-Sendefehler (id=0x{message.arbitration_id:x}): {exc}", file=sys.stderr)
-
-    def send_tx_analog_blocks():
-        for block in mapping.get("tx_analog_blocks", []):
-            if not block.get("active", True):
-                continue
-            values = [tx_values.get(ch) for ch in block["channels"]]
-            data = proto.encode_analog_block(values, value_bytes=block.get("value_bytes", 2))
-            safe_send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
-
-    def send_tx_digital_blocks():
-        for block in mapping.get("tx_digital_blocks", []):
-            if not block.get("active", True):
-                continue
-            values = [bool(tx_values.get(ch)) if ch else None for ch in block["channels"]]
-            data = proto.encode_digital_block(values)
-            safe_send(can.Message(arbitration_id=int(block["can_id"], 0), data=data, is_extended_id=False))
 
     ta_outputs = mapping.get("ta_network_outputs")
 
@@ -329,8 +306,6 @@ def main() -> None:
             # Custom CAN-Variable (uvr/cmd/<name>): sofortiges optimistisches Echo auf den
             # State-Topic, statt auf eine CAN-Antwort der UVR zu warten.
             mqtt_client.publish(f"{uvr_topic_prefix}/{channel}", payload, retain=True)
-        send_tx_analog_blocks()
-        send_tx_digital_blocks()
         send_ta_network_outputs()
 
     client.on_connect = on_connect
@@ -342,28 +317,7 @@ def main() -> None:
     print(f"Höre auf {CAN_INTERFACE} für UVR-Netzwerkausgänge ...")
     try:
         for msg in bus:
-            if msg.arbitration_id in rx_analog_by_id:
-                block = rx_analog_by_id[msg.arbitration_id]
-                channels = block["channels"]
-                try:
-                    values = proto.decode_analog_block(msg.data, value_bytes=block.get("value_bytes", 2))
-                except ValueError as exc:
-                    print(f"Decoder-Fehler (analog) für 0x{msg.arbitration_id:x}: {exc}", file=sys.stderr)
-                    continue
-                for channel, value in zip(channels, values):
-                    publish_rx_value(client, uvr_topic_prefix, channel, value)
-
-            elif msg.arbitration_id in rx_digital_by_id:
-                channels = rx_digital_by_id[msg.arbitration_id]
-                try:
-                    values = proto.decode_digital_block(msg.data)
-                except ValueError as exc:
-                    print(f"Decoder-Fehler (digital) für 0x{msg.arbitration_id:x}: {exc}", file=sys.stderr)
-                    continue
-                for channel, value in zip(channels, values):
-                    publish_rx_value(client, uvr_topic_prefix, channel, "ON" if value else "OFF")
-
-            elif rx_ta_output_channels and msg.arbitration_id == rx_ta_can_id:
+            if rx_ta_output_channels and msg.arbitration_id == rx_ta_can_id:
                 result = proto.decode_ta_analog_output_frame(msg.data)
                 if result is not None:
                     ausgang, value = result

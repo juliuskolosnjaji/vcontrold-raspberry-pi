@@ -6,18 +6,10 @@
 
 <div class="card">
   <p>Konfiguriert <code>config/can_mapping.json</code>: Bitrate, eigene Knoten-Nummer und welche
-     Werte auf welchen CAN-Slots gesendet bzw. empfangen werden. Die CAN-IDs sind erst nach dem
-     <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen (siehe README Abschnitt 3)
-     bekannt — bis dahin einfach leer lassen.</p>
-  <p><strong>Warum bei Analog alle 4 Slots eine neue CAN-ID:</strong> ein CAN-Frame hat hart
-     maximal 8 Byte Nutzlast — bei 2 Byte pro Wert passen nur 4 Werte in einen Frame. Die
-     {{ total_slots }} Analog-Slots verteilen sich deshalb auf {{ total_slots // 4 }} CAN-IDs
-     (Slots 1-4, 5-8, 9-12, 13-16). Bei Digital passen alle {{ total_slots }} Bits in einen
-     einzigen Frame, daher nur eine CAN-ID pro Spalte.</p>
-  <p><strong>Senden-Slots:</strong> Freitextfeld mit Vorschlägen aus <code>vito.xml</code>-Variablen
-     (siehe <a href="{{ url_for('variables_page') }}">Variablen</a>-Seite) — du kannst aber auch
-     einen beliebigen anderen Namen eintragen, falls der Wert nicht aus vcontrold kommt (z.B. von
-     Home Assistant direkt auf <code>internal/can/tx/&lt;name&gt;</code> published).</p>
+     Werte per CAN gesendet bzw. empfangen werden. Die Abschnitte unten nutzen ausschließlich
+     bestätigte, an echter Hardware verifizierte Formate (siehe README Abschnitt 3.3-3.5) --
+     CAN-IDs sind erst nach dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen
+     bekannt, bis dahin einfach leer lassen.</p>
 </div>
 
 <datalist id="tx-subtopics">
@@ -45,38 +37,6 @@
 
     <label for="own_node_number">Eigene Knoten-Nummer</label>
     <input type="number" id="own_node_number" name="own_node_number" value="{{ own_node_number }}" min="1" max="62">
-  </div>
-
-  <div class="can-columns">
-    {% for col in columns %}
-    <div class="can-column">
-      <h2>{{ col.label }}</h2>
-      {% for slot in col.slots %}
-      {% if slot.can_id_start %}
-      <div class="can-id-row">
-        <label>CAN-ID (Slots {{ loop.index }}-{{ loop.index + (3 if col.is_analog else 15) }})</label>
-        <input type="text" name="{{ col.key }}_can_id_{{ slot.block_index }}" value="{{ slot.can_id }}" placeholder="0x0 = unbenutzt">
-      </div>
-      {% endif %}
-      <div class="can-slot-row">
-        <span class="can-slot-label">Slot {{ loop.index }}</span>
-        {% if col.allow_forward %}
-        <input type="text" name="{{ col.key }}_slot_topic_{{ loop.index0 }}" value="{{ slot.topic }}"
-               list="uvr-topics" placeholder="uvr_kanalname">
-        <select name="{{ col.key }}_slot_forward_{{ loop.index0 }}">
-          <option value="" {% if not slot.forward %}selected{% endif %}>— keine Weiterleitung —</option>
-          {% for k in available_set_keys %}
-          <option value="{{ k }}" {% if slot.forward == k %}selected{% endif %}>→ {{ k }}</option>
-          {% endfor %}
-        </select>
-        {% else %}
-        <input type="text" name="{{ col.key }}_slot_value_{{ loop.index0 }}" value="{{ slot.value }}"
-               list="tx-subtopics" placeholder="Variable oder freier Name">
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endfor %}
   </div>
 
   <div class="card">
@@ -139,12 +99,15 @@
   </div>
 
   <div class="card">
-    <h2>TA-Netzwerkausgänge (bestätigtes Schema)</h2>
+    <h2>TA-Netzwerkausgänge senden (bestätigtes Schema)</h2>
     <p>Sendet Werte im tatsächlich von TA verwendeten Format (COB-ID <code>0x200/0x280/0x300/0x380 +
        Eigene Knoten-Nummer</code> für Analog, <code>0x180 + Eigene Knoten-Nummer</code> für Digital —
        siehe README Abschnitt 3.3), damit sie auf der UVR als "CAN-Analogeingang"/"CAN-Digitaleingang"
-       mit passender Knotennummer + Ausgangsnummer empfangen werden können. Analog-Kodierung ist gegen
-       echte Hardware bestätigt, Digital noch nicht getestet.</p>
+       mit passender Knotennummer + Ausgangsnummer empfangen werden können. Freitextfeld mit
+       Vorschlägen aus <code>vito.xml</code>-Variablen (siehe <a href="{{ url_for('variables_page') }}">Variablen</a>-Seite)
+       — du kannst aber auch einen beliebigen anderen Namen eintragen, falls der Wert nicht aus
+       vcontrold kommt (z.B. von Home Assistant direkt auf <code>internal/can/tx/&lt;name&gt;</code>
+       published). Analog-Kodierung ist gegen echte Hardware bestätigt, Digital noch nicht getestet.</p>
     <table class="canvar-table">
       <tr><th>Ausgang</th><th>Analog-Variable</th><th>Digital-Variable</th></tr>
       {% for i in range(total_slots) %}
@@ -161,8 +124,8 @@
     <h2>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</h2>
     <p>Komplett unabhängig von <code>vito.xml</code>/vcontrold: Home Assistant kann diese Werte
        direkt lesen <strong>und</strong> schreiben, der Wert geht per CAN direkt an die UVR.
-       Den Namen zusätzlich als Kanal in einem Senden-Slot oben eintragen, damit er tatsächlich
-       über CAN läuft.</p>
+       Den Namen zusätzlich als Kanal bei "TA-Netzwerkausgänge senden" oben eintragen, damit er
+       tatsächlich über CAN läuft.</p>
     <table class="canvar-table">
       <tr>
         <th>Name</th>
@@ -209,21 +172,9 @@
 {% endif %}
 
 <style>
-  .can-columns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
-  .can-column { background: white; border-radius: 6px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .can-column h2 { margin-top: 0; font-size: 1.1rem; border-bottom: 1px solid #ddd; padding-bottom: 0.4rem; }
   .can-id-row { background: #eef2f5; border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.6rem 0 0.4rem; }
   .can-id-row label { font-size: 0.75rem; font-weight: 600; margin: 0 0 0.2rem; }
   .can-id-row input { margin-bottom: 0; }
-  .can-slot-row { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.5rem; }
-  .can-slot-label { font-size: 0.72rem; color: #666; font-weight: 600; }
-  .can-slot-row input, .can-slot-row select { margin-bottom: 0.2rem; }
-  @media (max-width: 1100px) {
-    .can-columns { grid-template-columns: repeat(2, 1fr); }
-  }
-  @media (max-width: 650px) {
-    .can-columns { grid-template-columns: 1fr; }
-  }
   .canvar-table { width: 100%; font-size: 0.85rem; }
   .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
@@ -238,6 +189,7 @@ document.querySelectorAll('.canvar-component').forEach(function (select) {
     row.querySelectorAll('.canvar-select').forEach(el => el.style.display = isSelect ? '' : 'none');
   }
   select.addEventListener('change', update);
+  update();
 });
 </script>
 {% endblock %}

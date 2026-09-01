@@ -179,13 +179,13 @@ sudo systemctl enable --now can1-up
 - **CoE** (CAN over Ethernet) funktioniert nur zwischen zwei physischen C.M.I.-Geräten und ist damit für den Pi kein gangbarer Weg.
 - Das rohe CAN-Netzwerk-Ein-/Ausgang-Format ist bytegenau **nirgendwo öffentlich dokumentiert** (auch nicht als CANopen/J1939/Modbus — das UVR16x2-Handbuch erwähnt "CANopen" nur einmal beiläufig im Kontext der Netzwerktopologie, implementiert aber nachweislich sein eigenes proprietäres Format, keine echten CANopen-Objektverzeichnisse/SDO/PDO).
 
-Bestätigt ist nur die Blockstruktur (aus TAs eigener CoE-Anleitung): **analoge Netzwerkausgänge werden in 4er-Blöcken übertragen** (2 Byte pro Wert = 8 Byte Payload, genau ein CAN-Frame), **digitale in 16er-Blöcken** (1 Bit pro Wert = 2 Byte Payload). Das ist in [`scripts/ta_can_protocol.py`](scripts/ta_can_protocol.py) so umgesetzt; die eigentlichen **CAN-IDs sind Platzhalter** und müssen empirisch ermittelt werden:
-
-1. Auf der UVR16x2 unter "CAN-Bus" > "CAN-Ausgänge" einen Testkanal mit bekanntem Wert konfigurieren (z.B. einen Analogausgang auf einen leicht wiedererkennbaren Wert wie 12,3°C stellen).
-2. In der Web-UI unter **CAN-Sniffer** (siehe Abschnitt 6) für ein paar Sekunden mitschneiden.
-3. Den Frame mit passendem Wert im Datenfeld identifizieren (bei 4er-Blöcken: einer der vier `int16`-Werte im 8-Byte-Payload entspricht `Wert × 10`).
-4. Die gefundene CAN-ID und Kanal-Position in `config/can_mapping.json` eintragen (siehe `can_mapping.json.example` für das Format).
-5. Für Set-Richtung (Pi → UVR) das gleiche Vorgehen umgekehrt: einen Wert über `orchestrator.py` (bzw. testweise direkt per `cansend`) senden und beobachten, ob die UVR ihn als Netzwerkeingang übernimmt.
+TAs eigene CoE-Anleitung beschreibt eine Blockstruktur (analoge Netzwerkausgänge in 4er-Blöcken,
+2 Byte/Wert; digitale in 16er-Blöcken, 1 Bit/Wert) — dieses Schema wurde ursprünglich per CAN-
+Sniffer umgesetzt, stellte sich aber als **nicht das tatsächlich von der UVR gesendete Format**
+heraus (per `candump` widerlegt) und wurde wieder aus dem Code entfernt. Die tatsächlich per
+`candump` bestätigten Formate stehen in Abschnitt 3.4 (CAN-Analogausgänge empfangen) und 3.5
+(CAN-Digitalausgänge empfangen) — inklusive der Sniffer-Methode, mit der sie gefunden wurden.
+Für die Senderichtung (Pi → UVR) siehe Abschnitt 3.3 ("TA-Netzwerkausgänge").
 
 Alternativ/ergänzend: `technik@ta.co.at` anschreiben und nach der CAN-Wire-Protokoll-Dokumentation für Drittanbieter-CAN-Knoten fragen (TA verkauft selbst CAN-I/O-Module, die genau das brauchen).
 
@@ -378,9 +378,7 @@ ausgänge" editierbar, kein manuelles JSON-Bearbeiten nötig. `own_node_number` 
 wie für den Rest der CAN-Seite) bestimmt die eigene Knoten-Nummer für die COB-ID-Berechnung. Auf der
 UVR muss pro gewünschtem Wert ein "CAN-Analogeingang"/"CAN-Digitaleingang" mit passender
 Knotennummer + Ausgangsnummer angelegt werden (Messgröße auf einen konkreten Typ stellen, siehe
-oben). `ta_can_protocol.py`s alte Blockkodierung aus Abschnitt 3.1 bleibt parallel bestehen
-(`tx_analog_blocks`/`tx_digital_blocks`), falls das bestätigte Schema für einen Anwendungsfall
-nicht passt.
+oben).
 
 **Lese-Pfad (UVR → Pi), produktiv über `can_node.py`: `config/can_mapping.json`s `sdo_record`
 integriert das oben beschriebene, bestätigte Datensatz-Auslesen (`0x4FF4:04`) direkt in den
@@ -398,7 +396,7 @@ liest den Datensatz nicht aktiv per eigener SDO-Anfrage (wie `canopen_test.py --
 sondern setzt die Block-Transfer-Segmente direkt aus dem ohnehin laufenden CAN-Empfang zusammen,
 sobald irgendein anderer Master (z.B. das CMI) den Datensatz sowieso abfragt -- und published
 jeden gemappten Slot unter `uvr/<name>` (retained), inklusive automatischer Home-Assistant-
-Discovery, genau wie `rx_analog_blocks`/`rx_digital_blocks`.
+Discovery.
 
 **Warum passiv statt aktiv:** An echter Hardware hat sich gezeigt, dass eine aktive Anfrage an die
 im CMI angezeigte UVR-Node-ID (`--uvr-node-id 10`) mit `Object does not exist` (0x06020000)
@@ -419,11 +417,11 @@ Datensatz tatsächlich senden, vorab mit `sdo_sniffer.py` prüfen:
 venv/bin/python scripts/sdo_sniffer.py
 ```
 
-**Vorteil gegenüber `rx_analog_blocks`/`rx_digital_blocks`:** braucht keine
-"CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per Sniffer ermittelten CAN-IDs --
-nur die gewünschten Slot-Nummern. Welcher Slot welchem UVR-Sensor entspricht, muss aber pro
-Installation neu ermittelt werden (siehe Korrektur unten -- die Slots sind vermutlich rohe
-Eingangsmesswerte, keine 1:1-Abbildung der Ausgangsnummer).
+**Vorteil:** braucht keine "CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per
+Sniffer ermittelten CAN-IDs -- nur die gewünschten Slot-Nummern. Welcher Slot welchem UVR-Sensor
+entspricht, muss aber pro Installation neu ermittelt werden (siehe Korrektur unten -- die Slots
+sind vermutlich rohe Eingangsmesswerte, keine 1:1-Abbildung der Ausgangsnummer; für echte
+CAN-Analogausgänge stattdessen Abschnitt 3.4 verwenden).
 
 **Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
 reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die Digital-Ausgang-
@@ -553,10 +551,11 @@ Um einem weiteren Datenpunkt eine Number/Select-Entity zu geben, in `config/comm
 oder `{"component": "select", "options": [...]}`) und `orchestrator` neu starten.
 
 **CAN-Empfangswerte (UVR → Pi):** Diese haben keine Entsprechung in `vito.xml` und werden deshalb
-separat von `can_node.py` discovered — jeder in `config/can_mapping.json` unter `rx_analog_blocks`/
-`rx_digital_blocks` konfigurierte Kanal bekommt automatisch eine Sensor-Entity unter einem eigenen
-Gerät "UVR16x2 (CAN)" in Home Assistant, sobald `can-node` (neu) startet. Gilt für jeden Kanalnamen,
-egal ob er zufällig mit einer vito.xml-Variable übereinstimmt oder komplett frei erfunden ist.
+separat von `can_node.py` discovered — jeder in `config/can_mapping.json` unter
+`rx_ta_analog_outputs`/`rx_ta_digital_outputs`/`sdo_record` konfigurierte Kanal bekommt automatisch
+eine Sensor-Entity unter einem eigenen Gerät "UVR16x2 (CAN)" in Home Assistant, sobald `can-node`
+(neu) startet. Gilt für jeden Kanalnamen, egal ob er zufällig mit einer vito.xml-Variable
+übereinstimmt oder komplett frei erfunden ist.
 
 **Alternativ manuell:** `homeassistant/configuration_snippet.yaml` enthält dieselben Entities als
 statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
@@ -591,7 +590,7 @@ Jeder Abschnitt bleibt zusätzlich als eigenständige Seite erreichbar (`/consol
 Daneben:
 
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
-- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, die bestätigten CAN-Analog-/Digitalausgang-Lesepfade (Abschnitt 3.4/3.5) sowie je Spalte (Senden/Empfangen × Analog/Digital, altes Blockschema) 16 Slots, jeder per Dropdown mit einer Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
+- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, die bestätigten CAN-Analog-/Digitalausgang-Lesepfade (Abschnitt 3.4/3.5, je 16 Ausgang-Slots) und die TA-Netzwerkausgänge (Senderichtung, Abschnitt 3.3), jeder Slot per Dropdown mit einer Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
 - **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can1-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 
@@ -609,7 +608,7 @@ Erreichbar unter `http://<pi-ip>:5000` (läuft **als root**, da Config-Import na
 ## Offene Punkte, die nur du klären kannst
 
 1. ~~Protokoll der Vitotronic~~ — **erledigt:** V200KW1, Device-ID `2094`, KW-Protokoll (siehe `config/device-vitogas100-v200kw1/`).
-2. **CAN-IDs der UVR-Netzwerk-Ein-/Ausgänge** — bytegenau nicht öffentlich dokumentiert, muss per CAN-Sniffer empirisch ermittelt und in `config/can_mapping.json` eingetragen werden (siehe Abschnitt 3).
+2. ~~CAN-IDs der UVR-Netzwerk-Ein-/Ausgänge~~ — **Format erledigt:** bestätigte Formate für Senden (Abschnitt 3.3) und Empfangen (Abschnitt 3.4/3.5) gefunden. Nur die **CAN-ID der Analogausgänge** (Abschnitt 3.4) und die **UVR-eigene Node-ID** (Abschnitt 3.5) sind weiterhin pro Installation per CAN-Sniffer/CMI-Geräteübersicht zu ermitteln und in `config/can_mapping.json` einzutragen.
 3. ~~CAN-HAT-Modell~~ — **erledigt:** Waveshare 2-CH CAN HAT+ (MCP2515 über SPI1, siehe Abschnitt 3).
 4. **MQTT-Zugangsdaten** des Home-Assistant-Mosquitto-Brokers (Host/User/Passwort) in `config/mqtt.env`.
 
