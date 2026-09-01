@@ -429,6 +429,68 @@ reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die 
 Kodierung (`0x180+Node`, Bitmaske) ist noch nicht gegen echte Hardware getestet (nur analog
 bestätigt).
 
+**Wichtig -- für echte CAN-Analogausgänge stattdessen Abschnitt 3.4 verwenden:** Der obige
+SDO-Datensatz-Weg (`sdo_record`) liefert vermutlich rohe Eingangsmesswerte, nicht die konfigurierten
+CAN-Analogausgänge selbst (siehe Korrektur am Ende von Abschnitt 3.4). Wer gezielt einen CAN-Ausgang
+lesen will, sollte direkt mit Abschnitt 3.4 starten.
+
+### 3.4 CAN-Analogausgänge direkt lesen (bestätigtes, empfohlenes Format)
+
+Im Gegensatz zum SDO-Datensatz (Abschnitt 3.3) ist dies der tatsächliche Broadcast, den die UVR
+sendet, wenn ein "CAN-Analogausgang" konfiguriert ist -- per `candump` gegen echte Hardware
+verifiziert, mit vier unabhängigen Testwerten (inkl. negativ) exakt bestätigt:
+
+- **Eine gemeinsame CAN-ID für alle Ausgänge** (bei diesem Gerät `0x1CA` -- pro Installation per
+  Sniffer neu ermitteln, siehe unten), 8 Byte Payload.
+- `Byte 0 = 0x02` markiert diesen Frame-Typ (ein zweiter, hier ignorierter Frame-Typ mit
+  `Byte 0 = 0x01` wurde ebenfalls beobachtet, vermutlich Status/Digitalwerte).
+- `Byte 1 = Ausgangsnummer − 1` (0-basiert; z.B. Ausgang 2 → `0x01`, Ausgang 7 → `0x06`).
+- `Byte 2 = 0x01` (bei allen Beobachtungen konstant, vermutlich Mess-/Einheitentyp).
+- `Byte 3 = 0x00` (reserviert/ungenutzt).
+- `Byte 4-7 = Wert`, 4-Byte signed Little-Endian, `/10` skaliert (dieselbe Formel wie im
+  `0x4FF4`-Datensatz).
+
+**Wichtig: kein fester Sendetakt.** Jeder CAN-Analogausgang hat auf der UVR eine eigene
+"Sendebedingung" (Menü CAN-Bus → Ausgang → Detailansicht): sendet bei Wertänderung über einer
+konfigurierbaren Schwelle (Standard z.B. `1.0 K`), frühestens nach einer "Blockierzeit" (z.B. 10s)
+und spätestens nach einer "Intervallzeit" (z.B. 5 Minuten, auch ohne Änderung). Beim Testen per
+`candump` also entweder den Wert aktiv ändern oder die volle Intervallzeit abwarten.
+
+**Eigene CAN-ID per Sniffer ermitteln:** Wert des gewünschten Ausgangs am UVR-Display auf einen
+auffälligen, leicht wiederzuerkennenden Wert setzen (z.B. `25.5°C` → Rohwert `255` = `0x00FF`,
+Little-Endian also `FF 00 00 00` an Byte 4-7), dann:
+
+```bash
+candump can1 | grep -i "ff 00 00 00"
+```
+
+Die gefundene CAN-ID gilt für **alle** Analogausgänge dieses Geräts (per Byte 1 unterschieden) --
+einmal ermitteln reicht.
+
+Konfiguration in `config/can_mapping.json` (siehe `rx_ta_analog_outputs` in
+`can_mapping.json.example`):
+
+```json
+"rx_ta_analog_outputs": {
+  "can_id": "0x1ca",
+  "outputs": {
+    "2": "uvr_vorlauftemperatur"
+  }
+}
+```
+
+`can_node.py` published jeden gemappten Ausgang unter `uvr/<name>` (retained), inklusive
+automatischer Home-Assistant-Discovery, genau wie die übrigen Lesepfade.
+
+**Korrektur zum SDO-Datensatz (Abschnitt 3.3):** Ein Gegentest widerlegte die dortige Annahme
+"Slot N = Ausgang N": ein CAN-Ausgang wurde manuell auf einen Wert ohne realen Sensor dahinter
+gesetzt, und kein einziger der 21 Datensatz-Slots hat reagiert, während drei andere Ausgänge
+(die jeweils 1:1 einen physischen Sensor durchreichen) zufällig mit bestimmten Slots
+übereinstimmten. Der `0x4FF4`-Datensatz enthält also vermutlich rohe **Eingangsmesswerte**
+(angeschlossene Sensoren), nicht die konfigurierten CAN-Ausgänge. Für gezieltes Lesen eines
+CAN-Analogausgangs ist deshalb `rx_ta_analog_outputs` (dieser Abschnitt) der richtige Weg, nicht
+`sdo_record`.
+
 ## 4. Home Assistant einbinden
 
 **Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch

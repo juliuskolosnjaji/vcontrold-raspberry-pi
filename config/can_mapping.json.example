@@ -40,12 +40,18 @@
     }
   ],
 
-  "_hinweis_sdo_record": "Bestätigter, PASSIV mitgelesener Weg (siehe README Abschnitt 3.3, ta_canopen.process_sdo_frame): can_node.py liest den 98-Byte-Datensatz (Objekt 0x4FF4:04) direkt aus dem CAN-Empfang mit, sobald irgendein anderer Master (z.B. das CMI) ihn ohnehin abfragt -- braucht KEINE eigene aktive SDO-Anfrage und KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR (anders als rx_analog_blocks/rx_digital_blocks oben). 'slots' bildet Slot-Nummer (1-21, wie in canopen_test.py --read-record ausgegeben) auf einen Kanalnamen ab. 'uvr_node_id' ist ein OPTIONALER Filter -- weglassen/null akzeptiert den Datensatz von jeder Node-ID (empfohlen, siehe unten), eine Zahl beschränkt auf genau diese. WICHTIG: die Slots sind vermutlich rohe UVR-Eingangsmesswerte (physische Sensoren), NICHT die konfigurierten CAN-Analogausgänge -- ein Gegentest (Ausgang manuell auf einen sensorfremden Wert gesetzt) zeigte, dass sich dabei kein Slot ändert. Ein per Vergleich gefundener Slot bleibt trotzdem nutzbar, solange der verglichene Ausgang denselben physischen Sensor durchreicht, aber 'Slot N = Ausgang N' gilt NICHT als Regel. Jeden Slot vor Produktivnutzung über mehrere Minuten gegen den am UVR-Display abgelesenen Live-Wert desselben Sensors verifizieren (per sdo_sniffer.py alle 21 Slots einmal dekodieren und vergleichen), nicht aus einer anderen Installation übernehmen -- die Zuordnung ist installationsspezifisch.",
+  "_hinweis_rx_ta_analog_outputs": "EMPFOHLENER Weg, um echte 'CAN-Analogausgänge' der UVR zu lesen (bestätigt an echter Hardware per candump, siehe README Abschnitt 3.4): can_node.py hört auf EINER CAN-ID, die sich alle Ausgänge teilen (per Sniffer ermitteln -- Wert am UVR-Display auf einen auffälligen Testwert setzen, candump nach dem passenden Byte-Muster durchsuchen). Byte 1 des Frames unterscheidet die Ausgänge (0-basiert = Ausgangsnummer-1), Byte 4-7 ist der Wert (4-Byte signed Little-Endian, /10 skaliert). 'outputs' bildet Ausgangsnummer (1-16, wie am UVR-Display beschriftet) auf einen Kanalnamen ab. WICHTIG: Die UVR sendet nur bei Wertänderung über der pro Ausgang eingestellten Schwelle ('Sendebedingung' am UVR-Display) bzw. spätestens nach der 'Intervallzeit' (oft mehrere Minuten) -- kein fester Takt, also beim Testen etwas Geduld oder den Wert aktiv ändern.",
+  "rx_ta_analog_outputs": {
+    "can_id": "0x0",
+    "outputs": {
+      "2": "uvr_vorlauftemperatur"
+    }
+  },
+
+  "_hinweis_sdo_record": "ACHTUNG, vermutlich NICHT das, was du suchst, wenn du CAN-Analogausgänge lesen willst -- siehe rx_ta_analog_outputs oben. Dies liest passiv den 98-Byte-Datensatz (Objekt 0x4FF4:04) mit, den die CMI intern von der UVR abfragt (siehe README Abschnitt 3.3, ta_canopen.process_sdo_frame). Ein Gegentest zeigte: die Slots darin sind vermutlich rohe UVR-Eingangsmesswerte (physische Sensoren), NICHT die konfigurierten CAN-Analogausgänge -- eine manuelle Ausgangsänderung ohne echten Sensor dahinter schlug sich in KEINEM Slot nieder. 'slots' bildet Slot-Nummer (1-21) auf einen Kanalnamen ab, falls du trotzdem rohe Eingangsmesswerte brauchst.",
   "sdo_record": {
     "uvr_node_id": null,
-    "slots": {
-      "7": "uvr_vorlauftemperatur"
-    }
+    "slots": {}
   },
 
   "_beispiel_forward_as_set": "Ein rx-Kanal kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings in rx_analog_blocks/rx_digital_blocks."

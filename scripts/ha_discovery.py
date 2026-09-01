@@ -262,6 +262,8 @@ def publish_can_discovery(
     # {"topic": ..., "forward_as_set": ...}-Objekt (siehe can_node.py/publish_rx_value).
     for channel in can_mapping.get("sdo_record", {}).get("slots", {}).values():
         names.add(channel["topic"] if isinstance(channel, dict) else channel)
+    for channel in can_mapping.get("rx_ta_analog_outputs", {}).get("outputs", {}).values():
+        names.add(channel["topic"] if isinstance(channel, dict) else channel)
 
     for name in names - published:
         config = build_sensor_config(

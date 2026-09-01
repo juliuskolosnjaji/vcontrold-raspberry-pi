@@ -231,6 +231,17 @@ def main() -> None:
         int(b["can_id"], 0): b["channels"] for b in mapping.get("rx_digital_blocks", []) if b.get("active", True)
     }
 
+    rx_ta_outputs_config = mapping.get("rx_ta_analog_outputs")
+    rx_ta_can_id = int(rx_ta_outputs_config["can_id"], 0) if rx_ta_outputs_config else None
+    rx_ta_output_channels = (
+        {int(k): v for k, v in rx_ta_outputs_config.get("outputs", {}).items()} if rx_ta_outputs_config else {}
+    )
+    if rx_ta_output_channels:
+        print(
+            f"CAN-Analogausgang-Empfang aktiv (CAN-ID 0x{rx_ta_can_id:x}, "
+            f"{len(rx_ta_output_channels)} Ausgang/Ausgänge gemappt)"
+        )
+
     def safe_send(message: can.Message) -> None:
         """Sendet mit Timeout statt unbegrenzt zu blockieren -- ohne Timeout kann ein
         blockierendes bus.send() (z.B. bei Bus-Off/Error-Passive, kein ACK, TX-Puffer voll)
@@ -340,6 +351,15 @@ def main() -> None:
                     continue
                 for channel, value in zip(channels, values):
                     publish_rx_value(client, uvr_topic_prefix, channel, "ON" if value else "OFF")
+
+            elif rx_ta_output_channels and msg.arbitration_id == rx_ta_can_id:
+                result = proto.decode_ta_analog_output_frame(msg.data)
+                if result is not None:
+                    ausgang, value = result
+                    channel = rx_ta_output_channels.get(ausgang)
+                    if channel is not None:
+                        publish_rx_value(client, uvr_topic_prefix, channel, value)
+                        print(f"CAN-Analogausgang {ausgang}: {channel}={value}")
 
             elif sdo_slots and handle_sdo_record_frame(
                 msg, sdo_trackers, sdo_slots, sdo_filter_node, client, uvr_topic_prefix

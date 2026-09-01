@@ -351,11 +351,12 @@ def can_settings():
             "bitrate": int(request.form.get("bitrate", proto.DEFAULT_BITRATE) or proto.DEFAULT_BITRATE),
             "own_node_number": int(request.form.get("own_node_number", 1) or 1),
         }
-        # sdo_record hat (noch) keine eigenen Formularfelder auf dieser Seite -- unverändert
-        # übernehmen, sonst würde ein Speichern hier eine manuell/per JSON angelegte
-        # sdo_record-Konfiguration stillschweigend löschen.
-        if "sdo_record" in mapping:
-            new_mapping["sdo_record"] = mapping["sdo_record"]
+        # sdo_record/rx_ta_analog_outputs haben (noch) keine eigenen Formularfelder auf dieser
+        # Seite -- unverändert übernehmen, sonst würde ein Speichern hier eine manuell/per JSON
+        # angelegte Konfiguration stillschweigend löschen.
+        for passthrough_key in ("sdo_record", "rx_ta_analog_outputs"):
+            if passthrough_key in mapping:
+                new_mapping[passthrough_key] = mapping[passthrough_key]
         errors = []
 
         ta_net_analog = [
