@@ -8,9 +8,10 @@ Type=forking
 # dann intern Rechte ab (auf "nobody") -- danach kann es die eigene, root-only
 # Logdatei nicht mehr öffnen ("Permission denied"). Vor jedem Start bereinigen.
 ExecStartPre=-/bin/rm -f /tmp/vcontrold.log
-# -v/--verbose protokolliert die einzelnen Get/Set-Kommandos samt Werten nach /tmp/vcontrold.log
-# (ohne diesen Flag zeigt das Log nur Verbindungsaufbauten, keine eigentliche Kommunikation).
-ExecStart=/usr/sbin/vcontrold -x /etc/vcontrold/vcontrold.xml -v
+# -g/--debug protokolliert die einzelnen Get/Set-Kommandos samt Werten nach /tmp/vcontrold.log
+# (ohne diesen Flag zeigt das Log nur Verbindungsaufbauten, keine eigentliche Kommunikation --
+# -v/--verbose allein reicht dafür nicht, an echter Hardware getestet).
+ExecStart=/usr/sbin/vcontrold -x /etc/vcontrold/vcontrold.xml -g
 Restart=on-failure
 
 [Install]
