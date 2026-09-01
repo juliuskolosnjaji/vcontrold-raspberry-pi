@@ -292,18 +292,27 @@ stellt diesen Datensatz-Export vermutlich nicht als SDO-Server bereit, nur die i
 CMI-Verbindung (Node 65) tut es. Deshalb liest `can_node.py` den Datensatz **passiv und
 node-unabhängig** mit (siehe `sdo_record` unten), statt Node 10 aktiv anzufragen.
 
-**Wichtiger Vorbehalt zum Slot-Mapping:** Die Zuordnung Slot-Nummer → UVR-Kanal folgt der
-*aktuellen* Programmierung der UVR-"CAN-Analogausgänge" und verschiebt sich, sobald die UVR
-umprogrammiert wird -- die ursprüngliche Bestätigung "Slot 1 = Analogausgang 1" oben gilt nicht
-mehr zuverlässig (Ausgang 1 zeigt inzwischen "unbenutzt", während Slot 1 weiterhin einen aktiven
-Temperaturwert liefert). Bei diesem konkreten Setup (nur "CAN-Analogausgang 2 = T.Kessel VL" ist
-belegt, alle anderen "unbenutzt") gegen den Live-Wert am Display neu verifiziert: **Slot 7 ≈
-Analogausgang 2** ("T.Kessel VL", über mehrere Minuten parallel mit 33.1-33.2°C bestätigt). Die
-übrigen Slots mit Werten (1-6, 8-18) entsprechen offenbar internen UVR-Messwerten, die gar nicht
-als "CAN-Ausgang" konfiguriert sind -- der Datensatz enthält also mehr als nur die eingerichteten
-CAN-Ausgänge (vermutlich ein interner Logging-Datensatz der UVR, ähnlich einem D-LOGG-Export).
-Vor Produktivnutzung eines neuen Slots daher immer gegen den aktuell am UVR-Display abgelesenen
-Wert desselben Kanals verifizieren, nicht blind aus dieser Dokumentation oder einer anderen
+**Wichtige Korrektur: Die Slots sind vermutlich rohe Eingangsmesswerte, NICHT die konfigurierten
+CAN-Analogausgänge.** Ursprünglich wurde angenommen, Slot-Nummer entspreche der Ausgangsnummer
+("Slot 1 = Analogausgang 1"). Ein gezielter Gegentest widerlegt das: Ausgang 1 ("T.Heizkreis VL 1",
+Hand-Modus) wurde manuell von 0,0°C auf -1,1°C geändert -- **kein einziger** der 21 Slots hat sich
+daraufhin verändert. Gleichzeitig stimmten drei andere Ausgänge scheinbar exakt mit bestimmten
+Slots überein (Ausgang 2 "T.Kessel VL" ≈ Slot 7, Ausgang 4 = Slot 2, Ausgang 7 = Slot 12, bei
+diesem konkreten Setup). Die schlüssigste Erklärung: der Datensatz enthält die **physischen
+Eingangsmesswerte** der UVR (angeschlossene Sensoren), nicht die Ausgänge selbst. Ausgänge im
+Hand-/Auto-Modus, die 1:1 einen bestimmten Sensor durchreichen, zeigen deshalb zufällig denselben
+Wert wie "ihr" Sensor-Slot -- ändert man den Ausgang aber manuell auf einen Wert, der keinem realen
+Sensor entspricht (wie bei Ausgang 1), bleibt der zugehörige Eingang unverändert, und kein Slot
+reagiert.
+
+**Praktische Konsequenz:** Ein per Vergleich gefundener Slot bleibt nutzbar, solange der
+zugeordnete Ausgang weiterhin denselben physischen Sensor durchreicht -- er ist sogar stabiler als
+ursprünglich angenommen, da Eingangsmesswerte sich nicht ändern, wenn du später andere
+CAN-Ausgänge um- oder neu programmierst. Die Bezeichnung "Slot N = Ausgang N" in dieser
+Dokumentation ist aber irreführend und sollte nicht als feste Regel verstanden werden. Vor
+Produktivnutzung eines neuen Slots daher immer gegen den aktuell am UVR-Display abgelesenen Wert
+desselben Sensors/Kanals verifizieren (am besten über mehrere Minuten, mit natürlicher Drift, nicht
+nur einen einmaligen Zahlenvergleich), nicht blind aus dieser Dokumentation oder einer anderen
 Installation übernehmen.
 
 Testen:
@@ -411,7 +420,9 @@ venv/bin/python scripts/sdo_sniffer.py
 
 **Vorteil gegenüber `rx_analog_blocks`/`rx_digital_blocks`:** braucht keine
 "CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per Sniffer ermittelten CAN-IDs --
-nur die gewünschten Slot-Nummern (Slot 1 = Analogausgang 1 ist für dieses Gerät bereits bestätigt).
+nur die gewünschten Slot-Nummern. Welcher Slot welchem UVR-Sensor entspricht, muss aber pro
+Installation neu ermittelt werden (siehe Korrektur unten -- die Slots sind vermutlich rohe
+Eingangsmesswerte, keine 1:1-Abbildung der Ausgangsnummer).
 
 **Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
 reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die Digital-Ausgang-
