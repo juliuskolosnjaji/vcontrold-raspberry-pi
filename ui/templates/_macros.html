@@ -98,7 +98,7 @@ function confirmIfSet() {
 {% endmacro %}
 
 
-{% macro mqtt_variables_config(num_cycles, rows, post_action, return_to=None) %}
+{% macro mqtt_variables_config(cycle_rows, num_cycles, rows, post_action, return_to=None) %}
 {#- <form id="variables-form"> immer rendern, auch ohne Variablen -- die Zyklen-Felder im
    separaten cycles_config()-Abschnitt hängen sich per form="variables-form"-Attribut an dieses
    Formular an, unabhängig davon, ob hier Variablen-Zeilen existieren. Ohne dieses <form> wären
@@ -129,8 +129,7 @@ function confirmIfSet() {
         <th>Get</th>
         <th>Set</th>
         <th>Zyklus</th>
-        <th>Settable</th>
-        <th colspan="4">Discovery (nur wenn settable)</th>
+        <th colspan="4">Discovery (bei vorhandenem Setter automatisch settable)</th>
       </tr>
       {% for row in rows %}
       <tr class="{{ 'no-set' if not row.set }}">
@@ -144,34 +143,31 @@ function confirmIfSet() {
           <select name="var_cycle_{{ row.name }}">
             <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
             {% for i in num_cycles %}
-            <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>Zyklus {{ i + 1 }}</option>
+            <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>{{ cycle_rows[i].name or ('Zyklus ' ~ (i + 1)) }}</option>
             {% endfor %}
           </select>
         </td>
         {% if row.set %}
-        <td>
-          <input type="checkbox" class="settable-toggle" name="var_settable_{{ row.name }}" value="1" {% if row.settable %}checked{% endif %}>
-        </td>
-        <td class="discovery-field" {% if not row.settable %}style="display:none"{% endif %}>
+        <td class="discovery-field">
           <select name="var_component_{{ row.name }}">
             <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
             <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
             <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
           </select>
         </td>
-        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
+        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
           <input type="text" name="var_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C">
         </td>
-        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
+        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
           <input type="text" name="var_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min">
           <input type="text" name="var_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max">
           <input type="text" name="var_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step">
         </td>
-        <td class="discovery-field discovery-select" {% if not row.settable or row.component != "select" %}style="display:none"{% endif %}>
+        <td class="discovery-field discovery-select" {% if row.component != "select" %}style="display:none"{% endif %}>
           <input type="text" name="var_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ...">
         </td>
         {% else %}
-        <td colspan="5" class="no-set-cell">kein Setter in vito.xml → nicht settable</td>
+        <td colspan="4" class="no-set-cell">kein Setter in vito.xml → nicht settable</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -179,7 +175,7 @@ function confirmIfSet() {
   </div>
 
   <div class="card">
-    <button type="submit" onclick="return confirm('Zyklen und Settable-Konfiguration speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
+    <button type="submit" onclick="return confirm('Zyklen- und MQTT-Konfiguration speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
   </div>
   {% endif %}
 </form>
@@ -194,30 +190,18 @@ function confirmIfSet() {
 </style>
 
 <script>
-document.querySelectorAll('.settable-toggle').forEach(function (checkbox) {
-  const row = checkbox.closest('tr');
-  const componentSelect = row.querySelector('select[name^="var_component_"]');
+// Zeigt je Zeile nur die zur gewählten Discovery-Komponente (number/select) passenden Felder --
+// Switch braucht keine zusätzlichen Felder, daher weder discovery-number noch discovery-select.
+document.querySelectorAll('select[name^="var_component_"]').forEach(function (componentSelect) {
+  const row = componentSelect.closest('tr');
 
   function update() {
-    const settable = checkbox.checked;
-    const component = componentSelect ? componentSelect.value : 'number';
-    row.querySelectorAll('.discovery-field').forEach(function (el) {
-      if (!settable) {
-        el.style.display = 'none';
-        return;
-      }
-      if (el.classList.contains('discovery-number')) {
-        el.style.display = component === 'number' ? '' : 'none';
-      } else if (el.classList.contains('discovery-select')) {
-        el.style.display = component === 'select' ? '' : 'none';
-      } else {
-        el.style.display = '';
-      }
-    });
+    const component = componentSelect.value;
+    row.querySelectorAll('.discovery-number').forEach(el => el.style.display = component === 'number' ? '' : 'none');
+    row.querySelectorAll('.discovery-select').forEach(el => el.style.display = component === 'select' ? '' : 'none');
   }
 
-  checkbox.addEventListener('change', update);
-  if (componentSelect) componentSelect.addEventListener('change', update);
+  componentSelect.addEventListener('change', update);
   update();
 });
 </script>

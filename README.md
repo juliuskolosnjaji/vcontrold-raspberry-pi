@@ -133,10 +133,11 @@ cp config/command_map.json.example config/command_map.json
 nano config/command_map.json   # {"TempRaumNorSoll": {"discovery": {...}}} pro settable Variable
 ```
 
-`command_map.json` ist eine **Freigabeliste**: nur Variablen, die dort eingetragen sind, lassen sich
-per MQTT/CAN setzen — auch wenn `vito.xml` einen Setter dafür hat. Die `set`/`get`-Kommandos selbst
-werden automatisch aus `vito.xml` aufgelöst, in `command_map.json` stehen nur noch optionale
-Discovery-Metadaten für Home Assistant (Einheit, Min/Max/Step, oder Auswahloptionen bei einem Select).
+`command_map.json` wird automatisch aus `vito.xml` befüllt: **jede Variable mit einem Setter ist
+automatisch per MQTT/CAN setzbar** (keine separate Freischalt-Checkbox/Whitelist mehr). Die
+`set`/`get`-Kommandos selbst werden automatisch aus `vito.xml` aufgelöst, in `command_map.json`
+stehen nur noch optionale Discovery-Metadaten für Home Assistant (Einheit, Min/Max/Step, oder
+Auswahloptionen bei einem Select).
 
 Von `install.sh` bereits installiert, aber bewusst nicht automatisch gestartet (erst nach Konfiguration):
 
@@ -560,15 +561,37 @@ egal ob er zufällig mit einer vito.xml-Variable übereinstimmt oder komplett fr
 **Alternativ manuell:** `homeassistant/configuration_snippet.yaml` enthält dieselben Entities als
 statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
 
-## 5. Web-UI (Konsole, Config-Import, MQTT-Einstellungen, Diagnose, CAN-Sniffer)
+## 5. Web-UI (Vcontrold, MQTT-Einstellungen, CAN-Einstellungen, Diagnose, CAN-Sniffer)
 
-Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten:
+Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten.
 
-- **Konsole**: Getter/Setter aus deiner Geräte-XML per Dropdown auswählen oder frei eingeben, direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
-- **Config**: `vcontrold.xml` und `vito.xml` je in einem ein-/ausklappbaren Bereich — pro Datei entweder als Ganzes importieren (Upload) oder direkt als Text bearbeiten. Validiert XML vor dem Speichern, legt automatisch ein Backup an, startet `vcontrold` neu. Editor über die volle Bildbreite.
+**Vcontrold-Seite** (`/vcontrold`, im Nav-Menü als „Vcontrold") bündelt alles rund um vcontrold/
+vito.xml in fünf aufklappbaren Abschnitten:
+
+1. **Vcontrold-Konfiguration** (`vcontrold.xml`): als Ganzes importieren (Upload) oder direkt als
+   Text bearbeiten. Validiert XML vor dem Speichern, legt automatisch ein Backup an, startet
+   `vcontrold` neu.
+2. **Konsole**: Getter/Setter aus deiner Geräte-XML per Dropdown auswählen oder frei eingeben,
+   direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
+3. **vito.xml**: derselbe Import-/Bearbeiten-Mechanismus wie Abschnitt 1, für die Kommando-
+   Definitionen.
+4. **Zyklen**: Intervalle der bis zu 4 Read-Zyklen (`config/read_cycles.json`).
+5. **MQTT-Konfiguration**: alle aus `vito.xml` extrahierten Getter/Setter als Tabelle — pro
+   Variable per Dropdown einem Zyklus zuordnen und (bei vorhandenem Setter automatisch settable,
+   keine Checkbox nötig) Home-Assistant-Discovery-Metadaten (Einheit, Min/Max/Step oder
+   Auswahloptionen) pflegen. Ersetzt manuelles Editieren von `config/command_map.json`. Speichern
+   startet `orchestrator` (falls aktiv) automatisch neu.
+6. **Log der Kommunikation mit Vitotronic**: liest `/tmp/vcontrold.log` (per Klick oder alle 5s
+   automatisch aktualisiert) — zeigt die tatsächlichen Get/Set-Kommandos samt Werten, sofern
+   `-g/--debug` in `systemd/vcontrold.service` aktiv ist (Standard).
+
+Jeder Abschnitt bleibt zusätzlich als eigenständige Seite erreichbar (`/console`, `/config`,
+`/variables`) — praktisch für Lesezeichen oder wenn nur ein einzelner Bereich gebraucht wird.
+
+Daneben:
+
 - **MQTT-Einstellungen**: `config/mqtt.env` (Broker-Host, Port, Zugangsdaten, Topic-Präfixe) direkt im Browser bearbeiten und die Verbindung testen. Beim Speichern werden bereits laufende Dienste (`orchestrator`, `can-node`) automatisch neu gestartet — kein manuelles Editieren per SSH mehr nötig.
-- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, und je Spalte (Senden/Empfangen × Analog/Digital) 16 Slots, jeder per Dropdown mit einer vito.xml-Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
-- **Variablen**: die zentrale Seite — zeigt alle aus `vito.xml` extrahierten Getter/Setter als Tabelle. Pro Variable per Dropdown einem Zyklus zuordnen (ersetzt manuelles Editieren von `config/read_cycles.json`) und per Checkbox festlegen, ob sie per MQTT/CAN setzbar sein soll, inkl. Home-Assistant-Discovery-Metadaten (Einheit, Min/Max/Step oder Auswahloptionen). Ersetzt manuelles Editieren von `config/command_map.json`. Speichern startet `orchestrator` (falls aktiv) automatisch neu.
+- **CAN-Einstellungen**: `config/can_mapping.json` im Browser bearbeiten — Bitrate, eigene Knoten-Nummer, die bestätigten CAN-Analog-/Digitalausgang-Lesepfade (Abschnitt 3.4/3.5) sowie je Spalte (Senden/Empfangen × Analog/Digital, altes Blockschema) 16 Slots, jeder per Dropdown mit einer Variable belegbar. Speichern startet `can-node` (falls aktiv) automatisch neu.
 - **Diagnose**: Status aller Dienste (vcontrold, orchestrator, can-node, can1-up), Live-Logs, MQTT-Verbindungstest, CAN-Interface-Status.
 - **CAN-Sniffer**: zeichnet für N Sekunden rohe CAN-Frames auf — der zentrale Baustein, um die CAN-IDs für `config/can_mapping.json` empirisch zu ermitteln (siehe Abschnitt 3).
 

@@ -707,8 +707,8 @@ def variables_page():
 
             if not cmds.get("set"):
                 continue  # ohne Setter in vito.xml kann diese Variable nicht settable sein
-            if request.form.get(f"var_settable_{var_name}") != "1":
-                continue
+            # Automatisch settable, sobald vito.xml einen Setter hat -- keine separate
+            # Freischalt-Checkbox mehr (frühere Whitelist-Logik bewusst entfernt).
 
             entry = {}
             component = request.form.get(f"var_component_{var_name}", "number")

@@ -10,7 +10,7 @@
 {{ m.cycles_config(cycle_rows, num_cycles) }}
 
 <h2>MQTT-Konfiguration</h2>
-{{ m.mqtt_variables_config(num_cycles, rows, post_action) }}
+{{ m.mqtt_variables_config(cycle_rows, num_cycles, rows, post_action) }}
 
 {% if message %}
 <div class="card">
