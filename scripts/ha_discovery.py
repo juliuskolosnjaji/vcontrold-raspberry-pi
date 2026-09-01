@@ -13,8 +13,15 @@ Datenpunkte hinterlegt (siehe config/device-vitogas100-v200kw1/). Unbekannte
 Subtopics bekommen trotzdem eine Sensor-Entity, nur ohne Einheit/Icon.
 """
 import json
+import pathlib
 
 import vito_variables
+
+# Merkt sich pro Namespace ("vcontrold"/"can"), welche MQTT-Topics beim letzten Lauf published
+# wurden -- damit publish_discovery()/publish_can_discovery() bei jedem Start automatisch
+# verwaiste Entities löschen können (z.B. eine aus vito.xml entfernte Variable), ohne dass man
+# das manuell per mosquitto_pub aufräumen muss. Lokale Laufzeit-Datei, kein Config-Template.
+_STATE_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / ".discovery_state.json"
 
 DEVICE_INFO = {
     "identifiers": ["vcontrold_raspberry_pi"],
@@ -91,6 +98,32 @@ def _friendly_name(key: str) -> str:
 
 def _unique_id(key: str, id_prefix: str = "vcontrold") -> str:
     return f"{id_prefix}_{key}"
+
+
+def _load_discovery_state() -> dict:
+    if _STATE_PATH.exists():
+        try:
+            return json.loads(_STATE_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _sync_discovery_state(client, namespace: str, published_topics: set) -> None:
+    """Löscht (leere retained Nachricht) alle Topics, die beim letzten Lauf unter diesem
+    Namespace published wurden, jetzt aber nicht mehr in published_topics stehen -- z.B. weil
+    eine Variable aus vito.xml entfernt oder aus command_map.json/can_mapping.json genommen
+    wurde. Läuft automatisch bei jedem Dienst-Start, kein manueller Aufräumschritt nötig."""
+    state = _load_discovery_state()
+    previous = set(state.get(namespace, []))
+    stale = previous - published_topics
+    for topic in stale:
+        client.publish(topic, payload=None, retain=True)
+    if stale:
+        print(f"Discovery aufgeräumt ({namespace}): {len(stale)} verwaiste Topic(s) gelöscht")
+    state[namespace] = sorted(published_topics)
+    _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _STATE_PATH.write_text(json.dumps(state, indent=2))
 
 
 def build_sensor_config(key: str, state_topic: str, device: dict = None, id_prefix: str = "vcontrold") -> dict:
@@ -179,6 +212,7 @@ def publish_discovery(
         all_subtopics.update(cycle.get("variables", []))
 
     published = set()
+    published_topics = set()
 
     # Schreibbare Datenpunkte mit expliziter Discovery-Konfiguration zuerst (number/select),
     # damit sie nicht zusätzlich als reiner Sensor doppelt angelegt werden.
@@ -197,6 +231,7 @@ def publish_discovery(
         topic = f"{discovery_prefix}/{component}/{_unique_id(key)}/config"
         client.publish(topic, json.dumps(config), retain=True)
         published.add(key)
+        published_topics.add(topic)
 
     # Alle übrigen Read-Zyklen-Subtopics: bekannte Boolean-Werte als binary_sensor,
     # sonst als reiner Sensor.
@@ -208,6 +243,9 @@ def publish_discovery(
             config = build_sensor_config(key, state_topic=f"{topic_heizung}/{key}")
             topic = f"{discovery_prefix}/sensor/{_unique_id(key)}/config"
         client.publish(topic, json.dumps(config), retain=True)
+        published_topics.add(topic)
+
+    _sync_discovery_state(client, "vcontrold", published_topics)
 
 
 def publish_can_discovery(
@@ -227,6 +265,7 @@ def publish_can_discovery(
     reload_display_names()
     can_variables = can_variables or {}
     published = set()
+    published_topics = set()
 
     for key, entry in can_variables.items():
         if not isinstance(entry, dict):
@@ -245,6 +284,7 @@ def publish_can_discovery(
         topic = f"{discovery_prefix}/{component}/{_unique_id(key, 'vcontrold_uvr')}/config"
         client.publish(topic, json.dumps(config), retain=True)
         published.add(key)
+        published_topics.add(topic)
 
     # sdo_record.slots/rx_ta_*_outputs.outputs-Werte sind entweder ein reiner Name oder ein
     # {"topic": ..., "forward_as_set": ...}-Objekt (siehe can_node.py/publish_rx_value).
@@ -262,3 +302,6 @@ def publish_can_discovery(
         )
         topic = f"{discovery_prefix}/sensor/{_unique_id(name, 'vcontrold_uvr')}/config"
         client.publish(topic, json.dumps(config), retain=True)
+        published_topics.add(topic)
+
+    _sync_discovery_state(client, "can", published_topics)

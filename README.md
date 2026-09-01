@@ -565,6 +565,15 @@ Um einem weiteren Datenpunkt eine Number/Select-Entity zu geben, in `config/comm
 `"discovery"`-Block ergänzen (`{"component": "number", "unit": "...", "min": ..., "max": ..., "step": ...}`
 oder `{"component": "select", "options": [...]}`) und `orchestrator` neu starten.
 
+**Verwaiste Entities werden automatisch entfernt.** Wird eine Variable aus `vito.xml` gelöscht (oder
+ein Kanal aus `can_mapping.json`/`can_variables.json`), merkt sich `orchestrator.py`/`can_node.py`
+in `config/.discovery_state.json` (lokale Laufzeit-Datei, kein Template), welche Discovery-Topics
+beim letzten Start published wurden. Bei jedem Neustart wird die Differenz zum aktuellen Stand
+gebildet und die verwaisten Topics werden per leerer retained Nachricht gelöscht -- Home Assistant
+entfernt die zugehörige Entity darauf automatisch, kein manuelles `mosquitto_pub`/Aufräumen nötig.
+Damit das greift, muss der jeweilige Dienst tatsächlich neu starten: Änderungen über die Web-UI
+(vito.xml, Variablen/MQTT-Konfiguration, CAN-Einstellungen) lösen das automatisch aus.
+
 **CAN-Empfangswerte (UVR → Pi):** Diese haben keine Entsprechung in `vito.xml` und werden deshalb
 separat von `can_node.py` discovered — jeder in `config/can_mapping.json` unter
 `rx_ta_analog_outputs`/`rx_ta_digital_outputs`/`sdo_record` konfigurierte Kanal bekommt automatisch

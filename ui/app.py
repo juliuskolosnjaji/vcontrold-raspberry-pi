@@ -130,15 +130,30 @@ def console():
     )
 
 
-def finish_vcontrold_restart(action_desc: str) -> tuple[str, bool]:
+def finish_vcontrold_restart(action_desc: str, also_restart_orchestrator: bool = False) -> tuple[str, bool]:
     restart = diagnostics.restart_service("vcontrold")
     status = diagnostics.service_status("vcontrold")
-    if restart["ok"] and status["state"] == "active":
-        return f"{action_desc}, vcontrold läuft.", True
-    return (
-        f"{action_desc}, aber vcontrold-Neustart fehlgeschlagen: {restart['detail'] or status['state']}",
-        False,
-    )
+    if not (restart["ok"] and status["state"] == "active"):
+        return (
+            f"{action_desc}, aber vcontrold-Neustart fehlgeschlagen: {restart['detail'] or status['state']}",
+            False,
+        )
+    message, ok = f"{action_desc}, vcontrold läuft.", True
+
+    if also_restart_orchestrator:
+        # vito.xml bestimmt, welche Getter/Setter der Orchestrator kennt -- ohne Neustart
+        # würde er mit der alten Variablenliste weiterlaufen und z.B. entfernte Variablen
+        # weiterhin als vorhanden behandeln (siehe README "MQTT-Architektur").
+        orch_status = diagnostics.service_status("orchestrator")
+        if orch_status["state"] == "active":
+            orch_restart = diagnostics.restart_service("orchestrator")
+            if orch_restart["ok"]:
+                message += " orchestrator neu gestartet (übernimmt die neue Variablenliste)."
+            else:
+                message += f" ACHTUNG: orchestrator-Neustart fehlgeschlagen ({orch_restart['detail']}) -- läuft mit alter vito.xml weiter."
+                ok = False
+
+    return message, ok
 
 
 @app.route("/config", methods=["GET", "POST"])
@@ -169,7 +184,9 @@ def config_page():
                     message, message_ok = f"Ungültiges XML: {exc}", False
                 else:
                     backup_and_write(path, content)
-                    message, message_ok = finish_vcontrold_restart(f"{path.name} importiert")
+                    message, message_ok = finish_vcontrold_restart(
+                        f"{path.name} importiert", also_restart_orchestrator=(target == "device")
+                    )
                 finally:
                     tmp_path.unlink(missing_ok=True)
             else:
@@ -180,7 +197,9 @@ def config_page():
                     message, message_ok = f"Ungültiges XML: {exc}", False
                 else:
                     backup_and_write(path, content)
-                    message, message_ok = finish_vcontrold_restart(f"{path.name} gespeichert")
+                    message, message_ok = finish_vcontrold_restart(
+                        f"{path.name} gespeichert", also_restart_orchestrator=(target == "device")
+                    )
 
         if request.form.get("return_to") == "vcontrold":
             if message:

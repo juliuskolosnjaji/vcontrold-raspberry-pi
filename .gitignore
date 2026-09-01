@@ -3,6 +3,7 @@ config/command_map.json
 config/read_cycles.json
 config/can_mapping.json
 config/can_variables.json
+config/.discovery_state.json
 ui/ui.env
 __pycache__/
 *.pyc
