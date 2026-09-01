@@ -50,7 +50,11 @@
 <details class="config-file-block" id="log">
   <summary>5. Log der Kommunikation mit Vitotronic</summary>
   <div class="config-file-body">
-    <p>Live-Log des <code>{{ log_service }}</code>-Diensts (letzte 50 Zeilen, per Klick oder automatisch aktualisiert).</p>
+    <p>Rohes Protokoll-Log aus <code>/tmp/vcontrold.log</code> (letzte 200 Zeilen) -- zeigt die
+       tatsächlichen Get/Set-Kommandos und Werte, die vcontrold mit der Vitotronic austauscht
+       (<code>-g/--debug</code> in <code>systemd/vcontrold.service</code> aktiviert dieses Logging;
+       ohne diesen Flag stehen dort nur Verbindungsaufbauten). Sehr detailliert/bytebasiert --
+       relevante Zeilen sind z.B. <code>Command: getXYZ</code> und <code>&lt;wert&gt; -&gt; &lt;dekodierter Wert&gt;</code>.</p>
     <button type="button" onclick="loadVcontroldLog()">Log aktualisieren</button>
     <label style="display:inline-block; width:auto; margin-left:1rem;">
       <input type="checkbox" id="log-autorefresh" style="width:auto; display:inline-block;" onchange="toggleAutoRefresh()">
@@ -68,7 +72,7 @@
 let vcontroldLogTimer = null;
 
 function loadVcontroldLog() {
-  fetch('/diagnostics/log/{{ log_service }}')
+  fetch('/vcontrold/log')
     .then(r => r.json())
     .then(data => {
       document.getElementById('vcontrold-log-output').textContent = data.log || data.error;

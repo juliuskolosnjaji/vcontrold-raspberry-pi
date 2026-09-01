@@ -768,9 +768,6 @@ def variables_page():
     )
 
 
-VCONTROLD_LOG_SERVICE = "vcontrold"  # Dienst, dessen Log Abschnitt 5 ("Log der Kommunikation") zeigt
-
-
 @app.route("/vcontrold")
 def vcontrold_page():
     """Gebündelte Seite: Vcontrold-Konfiguration (vcontrold.xml), Konsole, vito.xml, Variablen
@@ -803,7 +800,6 @@ def vcontrold_page():
         result=None,
         executed_command="",
         device_xml=cfg["device_xml"],
-        log_service=VCONTROLD_LOG_SERVICE,
         post_action_config=url_for("config_page"),
         post_action_console=url_for("console"),
         post_action_variables=url_for("variables_page"),
@@ -843,6 +839,28 @@ def diagnostics_log(service: str):
     if service not in cfg["services"]:
         return jsonify({"error": "Unbekannter Dienst"}), 404
     return jsonify({"log": diagnostics.service_log(service)})
+
+
+# vcontrold schreibt die eigentliche Get/Set-Kommunikation (mit -g/--debug in
+# systemd/vcontrold.service) nicht nach journalctl, sondern in diese eigene Logdatei -- der
+# systemd-Journal-Log (siehe diagnostics_log oben) zeigt für vcontrold nur Start/Stop-Meldungen.
+VCONTROLD_DEBUG_LOG_PATH = pathlib.Path("/tmp/vcontrold.log")
+
+
+def tail_file(path: pathlib.Path, lines: int) -> str:
+    if not path.exists():
+        return f"{path} existiert nicht -- läuft vcontrold? (Datei wird bei jedem Start neu angelegt)"
+    try:
+        content = path.read_text(errors="replace")
+    except OSError as exc:
+        return f"Fehler beim Lesen von {path}: {exc}"
+    all_lines = content.splitlines()
+    return "\n".join(all_lines[-lines:]) or "(Logdatei ist leer)"
+
+
+@app.route("/vcontrold/log")
+def vcontrold_debug_log():
+    return jsonify({"log": tail_file(VCONTROLD_DEBUG_LOG_PATH, 200)})
 
 
 @app.route("/can-sniffer", methods=["GET"])
