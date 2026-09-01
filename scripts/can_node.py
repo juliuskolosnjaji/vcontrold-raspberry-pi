@@ -314,6 +314,13 @@ def main() -> None:
     def on_message(mqtt_client, userdata, msg):
         channel = msg.topic.rsplit("/", 1)[-1]
         payload = msg.payload.decode()
+        if not payload:
+            # Retained Nachricht wurde gelöscht (leerer Payload) -- z.B. weil der Orchestrator
+            # eine aus vito.xml entfernte Variable aufgeräumt hat (siehe README "Verwaiste
+            # Entities werden automatisch entfernt"). Kanal aus tx_values entfernen, sonst würde
+            # send_ta_network_outputs() den letzten bekannten Wert unbegrenzt weitersenden.
+            tx_values.pop(channel, None)
+            return
         value = resolve_numeric_value(can_variables, channel, payload)
         if value is None:
             return

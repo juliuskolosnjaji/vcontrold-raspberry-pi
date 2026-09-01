@@ -43,6 +43,12 @@ VCLIENT_PORT = "3002"
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
 COMMAND_MAP_PATH = PROJECT_ROOT / "config" / "command_map.json"
+# Merkt sich, welche vito.xml-Variablen beim letzten Start bekannt waren -- damit eine seither
+# entfernte Variable nicht für immer ihren letzten (jetzt veralteten) Wert als retained MQTT-
+# Nachricht behält. Ohne das würde can_node.py diesen eingefrorenen Wert unbegrenzt weiter als
+# TA-Netzwerkausgang an die UVR senden (tx_values wird nie explizit geleert, siehe README
+# "Verwaiste Entities werden automatisch entfernt"). Lokale Laufzeit-Datei, kein Config-Template.
+VARIABLE_STATE_PATH = PROJECT_ROOT / "config" / ".orchestrator_state.json"
 
 # vclient gibt bei numerischen Werten Zahl + Einheitstext zurück (z.B. "44.099998 Grad
 # Celsius", "127.500000 %") -- die Einheit ist bereits separat in ha_discovery.py's
@@ -181,9 +187,25 @@ class Orchestrator:
             batches[name] = (var_names, get_commands, template_path)
         return batches
 
+    def _sync_variable_state(self) -> None:
+        """Löscht (leere retained Nachricht) heizung/<var> für jede Variable, die beim letzten
+        Start noch bekannt war, jetzt aber nicht mehr in vito.xml existiert."""
+        current = set(self.variables.keys())
+        try:
+            state = json.loads(VARIABLE_STATE_PATH.read_text()) if VARIABLE_STATE_PATH.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            state = {}
+        stale = set(state.get("variables", [])) - current
+        for var_name in stale:
+            self.client.publish(f"{self.topic_heizung}/{var_name}", payload=None, retain=True)
+        if stale:
+            print(f"Retained Werte aufgeräumt: {len(stale)} verwaiste Variable(n) ({', '.join(sorted(stale))})")
+        VARIABLE_STATE_PATH.write_text(json.dumps({"variables": sorted(current)}, indent=2))
+
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
         print(f"Abonniert: {self.topic_cmd_heizung}/#")
+        self._sync_variable_state()
         if self.discovery_enabled:
             ha_discovery.publish_discovery(
                 client,
