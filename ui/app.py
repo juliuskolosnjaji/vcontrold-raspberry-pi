@@ -304,6 +304,33 @@ def load_can_mapping() -> dict:
 
 CAN_VARIABLE_ROWS = 8  # Anzahl editierbarer Zeilen für custom CAN-Variablen
 TA_NETWORK_OUTPUT_SLOTS = 16  # TA-Netzwerkausgänge (bestätigtes Schema, siehe ta_canopen.py)
+TA_RX_OUTPUT_SLOTS = 16  # rx_ta_analog_outputs/rx_ta_digital_outputs: Ausgang 1-16 (siehe README 3.4/3.5)
+
+
+def parse_ta_rx_output_rows(key: str) -> dict:
+    """Baut das 'outputs'-Dict für rx_ta_analog_outputs/rx_ta_digital_outputs aus den
+    Formularfeldern '{key}_slot_topic_<i>'/'{key}_slot_forward_<i>' (i=0..15, Ausgang i+1)."""
+    outputs = {}
+    for i in range(TA_RX_OUTPUT_SLOTS):
+        topic = request.form.get(f"{key}_slot_topic_{i}", "").strip()
+        if not topic:
+            continue
+        forward = request.form.get(f"{key}_slot_forward_{i}", "").strip()
+        outputs[str(i + 1)] = {"topic": topic, "forward_as_set": forward} if forward else topic
+    return outputs
+
+
+def build_ta_rx_output_rows(config: dict) -> list:
+    """Gegenstück zu parse_ta_rx_output_rows: 'outputs'-Dict -> flache Liste für's Template."""
+    outputs = (config or {}).get("outputs", {})
+    rows = []
+    for i in range(TA_RX_OUTPUT_SLOTS):
+        c = outputs.get(str(i + 1))
+        if isinstance(c, dict):
+            rows.append({"topic": c.get("topic", ""), "forward": c.get("forward_as_set", "")})
+        else:
+            rows.append({"topic": c or "", "forward": ""})
+    return rows
 
 
 def load_can_variables() -> dict:
@@ -351,13 +378,26 @@ def can_settings():
             "bitrate": int(request.form.get("bitrate", proto.DEFAULT_BITRATE) or proto.DEFAULT_BITRATE),
             "own_node_number": int(request.form.get("own_node_number", 1) or 1),
         }
-        # sdo_record/rx_ta_analog_outputs haben (noch) keine eigenen Formularfelder auf dieser
-        # Seite -- unverändert übernehmen, sonst würde ein Speichern hier eine manuell/per JSON
-        # angelegte Konfiguration stillschweigend löschen.
-        for passthrough_key in ("sdo_record", "rx_ta_analog_outputs", "rx_ta_digital_outputs"):
-            if passthrough_key in mapping:
-                new_mapping[passthrough_key] = mapping[passthrough_key]
+        # sdo_record hat (noch) keine eigenen Formularfelder auf dieser Seite -- unverändert
+        # übernehmen, sonst würde ein Speichern hier eine manuell/per JSON angelegte
+        # sdo_record-Konfiguration stillschweigend löschen.
+        if "sdo_record" in mapping:
+            new_mapping["sdo_record"] = mapping["sdo_record"]
         errors = []
+
+        for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
+            can_id_raw = request.form.get(f"{key}_can_id", "").strip()
+            outputs = parse_ta_rx_output_rows(key)
+            if not can_id_raw:
+                if outputs:
+                    errors.append(f"{key}: Ausgänge belegt, aber keine CAN-ID gesetzt")
+                continue
+            try:
+                can_id_int = int(can_id_raw, 0)
+            except ValueError:
+                errors.append(f"{key}: ungültige CAN-ID '{can_id_raw}'")
+                continue
+            new_mapping[key] = {"can_id": hex(can_id_int), "outputs": outputs}
 
         ta_net_analog = [
             request.form.get(f"ta_net_analog_{i}", "").strip() or None for i in range(TA_NETWORK_OUTPUT_SLOTS)
@@ -499,9 +539,31 @@ def can_settings():
     ta_net_analog = (ta_net_outputs.get("analog", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
     ta_net_digital = (ta_net_outputs.get("digital", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
 
+    # Vorschlagsliste für Empfangs-Kanalnamen ("existierende Variable" statt neuer Name): bereits
+    # verwendete Kanäle aus allen rx-Wegen + custom CAN-Variablen. Freies Eintippen bleibt möglich
+    # (Datalist erzwingt nichts), das deckt "neu anzulegende Variable" ab.
+    existing_uvr_topics = set()
+    for key in ("rx_analog_blocks", "rx_digital_blocks"):
+        for block in mapping.get(key, []):
+            for c in block.get("channels", []):
+                if c is not None:
+                    existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
+    for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
+        for c in mapping.get(key, {}).get("outputs", {}).values():
+            existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
+    for c in mapping.get("sdo_record", {}).get("slots", {}).values():
+        existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
+    existing_uvr_topics.update(can_variables.keys())
+
     return render_template(
         "can_settings.html",
         bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
+        rx_ta_analog_can_id=mapping.get("rx_ta_analog_outputs", {}).get("can_id", ""),
+        rx_ta_analog_rows=build_ta_rx_output_rows(mapping.get("rx_ta_analog_outputs")),
+        rx_ta_digital_can_id=mapping.get("rx_ta_digital_outputs", {}).get("can_id", ""),
+        rx_ta_digital_rows=build_ta_rx_output_rows(mapping.get("rx_ta_digital_outputs")),
+        ta_rx_output_slots=TA_RX_OUTPUT_SLOTS,
+        uvr_topics=sorted(existing_uvr_topics),
         own_node_number=mapping.get("own_node_number", 1),
         columns=columns,
         total_slots=TOTAL_SLOTS,

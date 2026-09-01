@@ -26,6 +26,12 @@
   {% endfor %}
 </datalist>
 
+<datalist id="uvr-topics">
+  {% for s in uvr_topics %}
+  <option value="{{ s }}"></option>
+  {% endfor %}
+</datalist>
+
 <form method="post">
   <div class="card">
     <label for="bitrate">CAN-Bitrate</label>
@@ -55,7 +61,8 @@
       <div class="can-slot-row">
         <span class="can-slot-label">Slot {{ loop.index }}</span>
         {% if col.allow_forward %}
-        <input type="text" name="{{ col.key }}_slot_topic_{{ loop.index0 }}" value="{{ slot.topic }}" placeholder="uvr_kanalname">
+        <input type="text" name="{{ col.key }}_slot_topic_{{ loop.index0 }}" value="{{ slot.topic }}"
+               list="uvr-topics" placeholder="uvr_kanalname">
         <select name="{{ col.key }}_slot_forward_{{ loop.index0 }}">
           <option value="" {% if not slot.forward %}selected{% endif %}>— keine Weiterleitung —</option>
           {% for k in available_set_keys %}
@@ -70,6 +77,65 @@
       {% endfor %}
     </div>
     {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>CAN-Analogausgänge empfangen (bestätigtes Format)</h2>
+    <p>Liest die tatsächlichen "CAN-Analogausgänge" der UVR direkt (siehe README Abschnitt 3.4) --
+       eine CAN-ID für alle 16 Ausgänge, per Sniffer ermitteln. Kanalname per Dropdown aus
+       bestehenden Variablen wählen oder frei eintippen (legt bei Bedarf eine neue MQTT-Variable
+       an). Optional per "Weiterleitung" zusätzlich als Set-Befehl an den Orchestrator schicken.</p>
+    <div class="can-id-row">
+      <label for="rx_ta_analog_can_id">CAN-ID (gemeinsam für alle Ausgänge)</label>
+      <input type="text" id="rx_ta_analog_can_id" name="rx_ta_analog_outputs_can_id" value="{{ rx_ta_analog_can_id }}" placeholder="0x1ca">
+    </div>
+    <table class="canvar-table">
+      <tr><th>Ausgang</th><th>Variable</th><th>Weiterleitung (optional)</th></tr>
+      {% for i in range(ta_rx_output_slots) %}
+      {% set row = rx_ta_analog_rows[i] %}
+      <tr>
+        <td>{{ i + 1 }}</td>
+        <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ row.topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
+        <td>
+          <select name="rx_ta_analog_outputs_slot_forward_{{ i }}">
+            <option value="" {% if not row.forward %}selected{% endif %}>— keine —</option>
+            {% for k in available_set_keys %}
+            <option value="{{ k }}" {% if row.forward == k %}selected{% endif %}>→ {{ k }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>CAN-Digitalausgänge empfangen (bestätigtes Format)</h2>
+    <p>Liest die tatsächlichen "CAN-Digitalausgänge" der UVR direkt (siehe README Abschnitt 3.5) --
+       CAN-ID = <code>0x180 + UVR-eigene Node-ID</code> (nicht die "Eigene Knoten-Nummer" oben, das
+       ist die Node-ID dieses Pi). Published <code>"ON"</code>/<code>"OFF"</code>.</p>
+    <div class="can-id-row">
+      <label for="rx_ta_digital_can_id">CAN-ID (gemeinsam für alle Ausgänge)</label>
+      <input type="text" id="rx_ta_digital_can_id" name="rx_ta_digital_outputs_can_id" value="{{ rx_ta_digital_can_id }}" placeholder="0x18a">
+    </div>
+    <table class="canvar-table">
+      <tr><th>Ausgang</th><th>Variable</th><th>Weiterleitung (optional)</th></tr>
+      {% for i in range(ta_rx_output_slots) %}
+      {% set row = rx_ta_digital_rows[i] %}
+      <tr>
+        <td>{{ i + 1 }}</td>
+        <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ row.topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
+        <td>
+          <select name="rx_ta_digital_outputs_slot_forward_{{ i }}">
+            <option value="" {% if not row.forward %}selected{% endif %}>— keine —</option>
+            {% for k in available_set_keys %}
+            <option value="{{ k }}" {% if row.forward == k %}selected{% endif %}>→ {{ k }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
   </div>
 
   <div class="card">
