@@ -6,7 +6,11 @@
 <h1>Variablen (aus {{ device_xml or "vito.xml (nicht konfiguriert)" }})</h1>
 <p><a href="{{ url_for('vcontrold_page') }}">→ Auch gebündelt auf der Vcontrold-Seite</a></p>
 
-{{ m.variables_table(cycle_rows, num_cycles, rows, post_action) }}
+<h2>Zyklen</h2>
+{{ m.cycles_config(cycle_rows, num_cycles) }}
+
+<h2>MQTT-Konfiguration</h2>
+{{ m.mqtt_variables_config(num_cycles, rows, post_action) }}
 
 {% if message %}
 <div class="card">

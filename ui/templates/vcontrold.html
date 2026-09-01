@@ -6,9 +6,9 @@
 <h1>Vcontrold</h1>
 
 <div class="card">
-  <p>Gebündelte Ansicht: Vcontrold-Konfiguration, Konsole, vito.xml, Variablen und ein Live-Log
-     der Vitotronic-Kommunikation, je in einem eigenen aufklappbaren Abschnitt. Jeder Abschnitt
-     bleibt auch einzeln erreichbar (<a href="{{ url_for('config_page') }}">Config</a>,
+  <p>Gebündelte Ansicht: Vcontrold-Konfiguration, Konsole, vito.xml, Zyklen, MQTT-Konfiguration
+     und ein Live-Log der Vitotronic-Kommunikation, je in einem eigenen aufklappbaren Abschnitt.
+     Jeder Abschnitt bleibt auch einzeln erreichbar (<a href="{{ url_for('config_page') }}">Config</a>,
      <a href="{{ url_for('console') }}">Konsole</a>, <a href="{{ url_for('variables_page') }}">Variablen</a>).</p>
 </div>
 
@@ -42,13 +42,18 @@
   {% endif %}
 </details>
 
+<details class="config-file-block" id="zyklen">
+  <summary>4. Zyklen</summary>
+  {{ m.cycles_config(cycle_rows, num_cycles) }}
+</details>
+
 <details class="config-file-block" id="variablen">
-  <summary>4. Variablen (aus vito.xml)</summary>
-  {{ m.variables_table(cycle_rows, num_cycles, rows, post_action_variables, return_to="vcontrold") }}
+  <summary>5. MQTT-Konfiguration (Variablen aus vito.xml)</summary>
+  {{ m.mqtt_variables_config(num_cycles, rows, post_action_variables, return_to="vcontrold") }}
 </details>
 
 <details class="config-file-block" id="log">
-  <summary>5. Log der Kommunikation mit Vitotronic</summary>
+  <summary>6. Log der Kommunikation mit Vitotronic</summary>
   <div class="config-file-body">
     <p>Rohes Protokoll-Log aus <code>/tmp/vcontrold.log</code> (letzte 200 Zeilen) -- zeigt die
        tatsächlichen Get/Set-Kommandos und Werte, die vcontrold mit der Vitotronic austauscht

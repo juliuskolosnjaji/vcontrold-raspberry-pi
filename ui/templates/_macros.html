@@ -75,22 +75,12 @@ function confirmIfSet() {
 {% endmacro %}
 
 
-{% macro variables_table(cycle_rows, num_cycles, rows, post_action, return_to=None) %}
-{% if not rows %}
+{% macro cycles_config(cycle_rows, num_cycles) %}
 <div class="card">
-  <p><em>Keine Variablen gefunden. Prüfe DEVICE_XML_PATH in ui.env.</em></p>
-</div>
-{% else %}
-
-<div class="card">
-  <p>Alle Getter/Setter aus deiner Geräte-XML an einer Stelle: welchem Read-Zyklus eine Variable
-     zugeordnet ist, und ob/wie sie per MQTT/CAN setzbar ist (Home-Assistant-Discovery-Metadaten
-     inklusive). MQTT-Topic und CAN-Kanalname sind immer exakt der Variablenname hier links —
-     keine separate Umbenennung nötig. "Anzeigename in HA" ändert nur den in Home Assistant
-     angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet), <code>getTempKsoll</code>/
-     <code>setTempKsoll</code> bleiben dabei unverändert.</p>
-
-  <h2>Zyklen</h2>
+  <p>Wie oft welcher Read-Zyklus abgefragt wird. Welche Variable zu welchem Zyklus gehört, wird
+     unten in der MQTT-Konfiguration pro Variable zugeordnet -- die Zuordnung landet trotzdem
+     zusammen mit diesen Zyklus-Definitionen in <code>config/read_cycles.json</code> (ein
+     Speichern-Klick dort, siehe unten, speichert auch die hier eingestellten Intervalle mit).</p>
   <table style="max-width: 700px;">
     <tr><th>Zyklus</th><th>Name</th><th>Intervall (Sek.)</th></tr>
     {% for i in num_cycles %}
@@ -101,10 +91,36 @@ function confirmIfSet() {
     </tr>
     {% endfor %}
   </table>
+  <p><em>Hinweis: die Felder hier gehören zum selben Formular wie die MQTT-Konfiguration
+     (nutzt <code>form="variables-form"</code>) -- der Speichern-Button steht dort unten, deckt
+     aber beide Abschnitte ab.</em></p>
 </div>
+{% endmacro %}
 
+
+{% macro mqtt_variables_config(num_cycles, rows, post_action, return_to=None) %}
+{#- <form id="variables-form"> immer rendern, auch ohne Variablen -- die Zyklen-Felder im
+   separaten cycles_config()-Abschnitt hängen sich per form="variables-form"-Attribut an dieses
+   Formular an, unabhängig davon, ob hier Variablen-Zeilen existieren. Ohne dieses <form> wären
+   die Zyklen-Felder bei leerem vito.xml (kein Setter/Getter gefunden) verwaist. -#}
 <form method="post" id="variables-form" action="{{ post_action }}">
   {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+
+  {% if not rows %}
+  <div class="card">
+    <p><em>Keine Variablen gefunden. Prüfe DEVICE_XML_PATH in ui.env.</em></p>
+  </div>
+  {% else %}
+
+  <div class="card">
+    <p>MQTT-Konfiguration für vcontrold: welchem Read-Zyklus eine Variable zugeordnet ist (Zyklen
+       selbst siehe eigener Abschnitt), und ob/wie sie per MQTT/CAN setzbar ist (Home-Assistant-
+       Discovery-Metadaten inklusive). MQTT-Topic und CAN-Kanalname sind immer exakt der
+       Variablenname hier links — keine separate Umbenennung nötig. "Anzeigename in HA" ändert nur
+       den in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen
+       abgeleitet), <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben dabei unverändert.</p>
+  </div>
+
   <div class="card wide-card">
     <table class="variables-table">
       <tr>
@@ -165,9 +181,8 @@ function confirmIfSet() {
   <div class="card">
     <button type="submit" onclick="return confirm('Zyklen und Settable-Konfiguration speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
   </div>
+  {% endif %}
 </form>
-
-{% endif %}
 
 <style>
   .wide-card { max-width: none; }
