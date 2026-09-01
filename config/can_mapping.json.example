@@ -48,6 +48,14 @@
     }
   },
 
+  "_hinweis_rx_ta_digital_outputs": "EMPFOHLENER Weg, um echte 'CAN-Digitalausgänge' der UVR zu lesen (bestätigt an echter Hardware, zwei unabhängige Toggles exakt verifiziert, siehe README Abschnitt 3.5). CAN-ID = 0x180 + UVR-eigene Node-ID (NICHT own_node_number oben -- das ist die Node-ID DIESES Pi, hier geht es um die Node-ID der UVR selbst, siehe CMI-Geräteübersicht/CAN-Bus-Menü). Byte 0-1 des Frames = 16-Bit-Bitmaske Little-Endian, Bit (Ausgangsnummer-1) = Zustand (1=EIN). 'outputs' bildet Ausgangsnummer (1-16) auf einen Kanalnamen ab -- can_node.py published 'ON'/'OFF'.",
+  "rx_ta_digital_outputs": {
+    "can_id": "0x0",
+    "outputs": {
+      "4": "uvr_zirkulationspumpe"
+    }
+  },
+
   "_hinweis_sdo_record": "ACHTUNG, vermutlich NICHT das, was du suchst, wenn du CAN-Analogausgänge lesen willst -- siehe rx_ta_analog_outputs oben. Dies liest passiv den 98-Byte-Datensatz (Objekt 0x4FF4:04) mit, den die CMI intern von der UVR abfragt (siehe README Abschnitt 3.3, ta_canopen.process_sdo_frame). Ein Gegentest zeigte: die Slots darin sind vermutlich rohe UVR-Eingangsmesswerte (physische Sensoren), NICHT die konfigurierten CAN-Analogausgänge -- eine manuelle Ausgangsänderung ohne echten Sensor dahinter schlug sich in KEINEM Slot nieder. 'slots' bildet Slot-Nummer (1-21) auf einen Kanalnamen ab, falls du trotzdem rohe Eingangsmesswerte brauchst.",
   "sdo_record": {
     "uvr_node_id": null,

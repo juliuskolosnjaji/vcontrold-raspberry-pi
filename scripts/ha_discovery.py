@@ -264,6 +264,8 @@ def publish_can_discovery(
         names.add(channel["topic"] if isinstance(channel, dict) else channel)
     for channel in can_mapping.get("rx_ta_analog_outputs", {}).get("outputs", {}).values():
         names.add(channel["topic"] if isinstance(channel, dict) else channel)
+    for channel in can_mapping.get("rx_ta_digital_outputs", {}).get("outputs", {}).values():
+        names.add(channel["topic"] if isinstance(channel, dict) else channel)
 
     for name in names - published:
         config = build_sensor_config(

@@ -491,6 +491,50 @@ gesetzt, und kein einziger der 21 Datensatz-Slots hat reagiert, während drei an
 CAN-Analogausgangs ist deshalb `rx_ta_analog_outputs` (dieser Abschnitt) der richtige Weg, nicht
 `sdo_record`.
 
+### 3.5 CAN-Digitalausgänge direkt lesen (bestätigtes, empfohlenes Format)
+
+Analog zu Abschnitt 3.4, aber für Digitalausgänge. Der reine CAN-Sniffer-Vergleich (`candump`
+vorher/nachher per `diff`) scheiterte hier zunächst, weil ein Bit keinen eindeutig grep-baren
+Zahlenwert wie ein Analogwert hat und der Bus stark von CMI-internem Namens-/Objektlisten-Traffic
+dominiert wird. Der entscheidende Trick: **nach komplett neuen CAN-IDs suchen** (nicht nach
+geänderten Payloads auf bekannten IDs) -- ein kurzes Zeitfenster um einen Toggle mitschneiden und
+die Menge aller aufgetretenen CAN-IDs mit einer vorher bekannten "Hintergrundliste" vergleichen:
+
+```bash
+timeout 20 candump -ta can1 > /tmp/digital_test.log
+awk '{print $3}' /tmp/digital_test.log | sort -u
+```
+
+So gefunden: **CAN-ID `0x180 + UVR-eigene Node-ID`** (bei diesem Gerät `0x18A` = `0x180+10`, die
+UVR hat laut CMI-Geräteübersicht Node-ID 10 -- **nicht** zu verwechseln mit `own_node_number` in
+`can_mapping.json`, das ist die Node-ID *dieses Pi*, nicht der UVR). Das ist dieselbe COB-ID-Formel,
+die dieses Projekt bereits für die Senderichtung nutzt (`DIGITAL_OUTPUT_COB_ID_BASE` in
+`ta_canopen.py`), nur jetzt in Empfangsrichtung bestätigt: zwei unabhängige Testtoggles
+(Ausgang 4 → `0x08` = Bit 3, Ausgang 6 → `0x20` = Bit 5) bestätigten exakt `Bit (Ausgangsnummer-1)`.
+
+Format: `Byte 0-1` = 16-Bit-Bitmaske Little-Endian (`Bit N-1` = Ausgang `N`, `1`=EIN), restliche
+Bytes des 8-Byte-Frames ungenutzt -- identisch zu `encode_digital_outputs()` in `ta_canopen.py`,
+nur in Leserichtung (`decode_digital_outputs()`).
+
+**Eigene CAN-ID ermitteln:** Die UVR-eigene Node-ID im CMI unter CAN-Bus (Geräteübersicht) able­sen,
+dann `0x180 + Node-ID` (hex) verwenden. Zur Sicherheit trotzdem per `candump` gegentesten (Ausgang
+toggeln, auf die berechnete ID filtern) -- die Sendebedingung (siehe Abschnitt 3.4) gilt auch hier.
+
+Konfiguration in `config/can_mapping.json` (siehe `rx_ta_digital_outputs` in
+`can_mapping.json.example`):
+
+```json
+"rx_ta_digital_outputs": {
+  "can_id": "0x18a",
+  "outputs": {
+    "4": "uvr_zirkulationspumpe"
+  }
+}
+```
+
+`can_node.py` published jeden gemappten Ausgang als `"ON"`/`"OFF"` unter `uvr/<name>` (retained),
+inklusive automatischer Home-Assistant-Discovery.
+
 ## 4. Home Assistant einbinden
 
 **Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch

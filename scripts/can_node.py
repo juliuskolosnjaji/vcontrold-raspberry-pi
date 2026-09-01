@@ -242,6 +242,17 @@ def main() -> None:
             f"{len(rx_ta_output_channels)} Ausgang/Ausgänge gemappt)"
         )
 
+    rx_ta_digital_config = mapping.get("rx_ta_digital_outputs")
+    rx_ta_digital_can_id = int(rx_ta_digital_config["can_id"], 0) if rx_ta_digital_config else None
+    rx_ta_digital_channels = (
+        {int(k): v for k, v in rx_ta_digital_config.get("outputs", {}).items()} if rx_ta_digital_config else {}
+    )
+    if rx_ta_digital_channels:
+        print(
+            f"CAN-Digitalausgang-Empfang aktiv (CAN-ID 0x{rx_ta_digital_can_id:x}, "
+            f"{len(rx_ta_digital_channels)} Ausgang/Ausgänge gemappt)"
+        )
+
     def safe_send(message: can.Message) -> None:
         """Sendet mit Timeout statt unbegrenzt zu blockieren -- ohne Timeout kann ein
         blockierendes bus.send() (z.B. bei Bus-Off/Error-Passive, kein ACK, TX-Puffer voll)
@@ -360,6 +371,20 @@ def main() -> None:
                     if channel is not None:
                         publish_rx_value(client, uvr_topic_prefix, channel, value)
                         print(f"CAN-Analogausgang {ausgang}: {channel}={value}")
+
+            elif rx_ta_digital_channels and msg.arbitration_id == rx_ta_digital_can_id:
+                try:
+                    states = ta.decode_digital_outputs(msg.data)
+                except ValueError as exc:
+                    print(f"Decoder-Fehler (TA-Digitalausgang) für 0x{msg.arbitration_id:x}: {exc}", file=sys.stderr)
+                else:
+                    for ausgang, channel in rx_ta_digital_channels.items():
+                        if not (1 <= ausgang <= 16):
+                            print(f"CAN-Digitalausgang {ausgang} außerhalb 1-16, überspringe", file=sys.stderr)
+                            continue
+                        value = states[ausgang - 1]
+                        publish_rx_value(client, uvr_topic_prefix, channel, "ON" if value else "OFF")
+                        print(f"CAN-Digitalausgang {ausgang}: {channel}={'ON' if value else 'OFF'}")
 
             elif sdo_slots and handle_sdo_record_frame(
                 msg, sdo_trackers, sdo_slots, sdo_filter_node, client, uvr_topic_prefix

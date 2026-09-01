@@ -44,7 +44,12 @@ DEFAULT_HEARTBEAT_MS = 1000
 # candlelight, no CMI", FHEM-CanOverEthernet-Modul), per scripts/send_network_output_test.py
 # gegen die echte UVR verifiziert (Wert kam korrekt am konfigurierten CAN-Analogeingang an).
 ANALOG_OUTPUT_COB_ID_BASES = (0x200, 0x280, 0x300, 0x380)  # Ausgänge 1-4, 5-8, 9-12, 13-16
-DIGITAL_OUTPUT_COB_ID_BASE = 0x180  # Ausgänge 1-16 als Bitmaske -- NICHT verifiziert (nur analog getestet)
+# Ausgänge 1-16 als Bitmaske. Ursprünglich nur für die Senderichtung (Pi -> UVR) angenommen,
+# inzwischen auch in EMPFANGSRICHTUNG bestätigt (siehe README Abschnitt 3.5): die UVR selbst
+# sendet ihre CAN-Digitalausgänge unter 0x180 + eigene Node-ID (bei diesem Gerät 0x18A = 0x180+10,
+# die UVR hat laut CMI-Geräteübersicht Node-ID 10) -- zwei unabhängige Testtoggles (Ausgang 4,
+# Ausgang 6) bestätigten Bit(N-1) = Ausgang N exakt.
+DIGITAL_OUTPUT_COB_ID_BASE = 0x180
 
 
 def encode_analog_outputs(values: list) -> bytes:
@@ -66,6 +71,18 @@ def encode_digital_outputs(values: list) -> bytes:
         if v:
             bitmask |= 1 << i
     return struct.pack("<H", bitmask)
+
+
+def decode_digital_outputs(data: bytes) -> list[bool]:
+    """Dekodiert einen von der UVR gesendeten CAN-Digitalausgang-Broadcast (bestätigt an echter
+    Hardware, siehe README Abschnitt 3.5 und Modul-Docstring zu DIGITAL_OUTPUT_COB_ID_BASE):
+    Byte 0-1 = 16-Bit-Bitmaske Little-Endian (Bit N-1 = Ausgang N, 1=EIN), restliche Bytes des
+    8-Byte-Frames ungenutzt. Dieselbe Kodierung wie encode_digital_outputs() oben, nur in
+    Empfangsrichtung (UVR ist hier Sender). Gibt 16 Werte zurück (Ausgang 1-16, 1-basiert)."""
+    if len(data) < 2:
+        raise ValueError(f"Erwarte mindestens 2 Byte, bekam {len(data)}")
+    (bitmask,) = struct.unpack("<H", data[:2])
+    return [bool(bitmask & (1 << i)) for i in range(16)]
 
 
 def create_own_node(network: canopen.Network, own_node_id: int, heartbeat_ms: int = DEFAULT_HEARTBEAT_MS) -> canopen.LocalNode:
