@@ -28,6 +28,8 @@ import json
 import pathlib
 import subprocess
 import sys
+import threading
+import time
 
 import can
 import canopen
@@ -76,6 +78,52 @@ def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
             client.publish(f"{TOPIC_RX_SETREQUEST}/{forward_key}", value)
     else:
         client.publish(f"{uvr_topic_prefix}/{channel}", value, retain=True)
+
+
+def start_sdo_record_polling(network: canopen.Network, sdo_config: dict | None, client, uvr_topic_prefix: str) -> None:
+    """Fragt periodisch den bestätigten UVR-Datensatz (Objekt 0x4FF4:04, siehe
+    ta_canopen.decode_datensatz) per SDO ab und published die per config/can_mapping.json's
+    'sdo_record.slots' benannten Werte -- im Unterschied zu rx_analog_blocks/rx_digital_blocks
+    (die auf von der UVR aktiv gesendete Netzwerkausgang-Frames warten) braucht dieser Weg
+    KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR, siehe README Abschnitt 3.3.
+
+    Nutzt dieselbe canopen.Network (und damit denselben zweiten CAN-Socket) wie der
+    Heartbeat -- ein SDO-Request/Response-Zyklus blockiert kurz, läuft aber in einem
+    eigenen Thread und stört daher weder den Heartbeat noch die separate Haupt-Lese-
+    schleife (eigener Thread, eigener Socket) unten in main()."""
+    if not sdo_config:
+        return
+    uvr_node_id = sdo_config.get("uvr_node_id")
+    if uvr_node_id is None:
+        print("sdo_record.uvr_node_id fehlt in can_mapping.json, SDO-Datensatz-Polling deaktiviert", file=sys.stderr)
+        return
+    slots = {int(slot): channel for slot, channel in sdo_config.get("slots", {}).items()}
+    if not slots:
+        print("sdo_record.slots ist leer, SDO-Datensatz-Polling deaktiviert", file=sys.stderr)
+        return
+    interval = sdo_config.get("poll_interval_seconds", 30)
+    sdo_node = network.add_node(uvr_node_id, ta.EDS_PATH)
+
+    def poll_loop():
+        while True:
+            try:
+                payload = sdo_node.sdo.upload(ta.UVR_DATENSATZ_OBJ, ta.UVR_DATENSATZ_SUBINDEX)
+                record = ta.decode_datensatz(payload)
+                for slot, channel in slots.items():
+                    index = slot - 1
+                    if 0 <= index < len(record["values"]):
+                        publish_rx_value(client, uvr_topic_prefix, channel, record["values"][index])
+                    else:
+                        print(
+                            f"sdo_record: Slot {slot} außerhalb des Datensatzes ({len(record['values'])} Werte)",
+                            file=sys.stderr,
+                        )
+            except Exception as exc:
+                print(f"SDO-Datensatz-Poll fehlgeschlagen (Node {uvr_node_id}): {exc}", file=sys.stderr)
+            time.sleep(interval)
+
+    threading.Thread(target=poll_loop, daemon=True).start()
+    print(f"SDO-Datensatz-Polling gestartet (Node {uvr_node_id}, alle {interval}s, {len(slots)} Slot(s) gemappt)")
 
 
 def load_mapping() -> dict:
@@ -170,6 +218,8 @@ def main() -> None:
     heartbeat_network.notifier = can.Notifier(heartbeat_bus, heartbeat_network.listeners)
     own_node = ta.create_own_node(heartbeat_network, own_node_number)
     print(f"Heartbeat gestartet (eigene Node-ID {own_node_number})")
+
+    start_sdo_record_polling(heartbeat_network, mapping.get("sdo_record"), client, uvr_topic_prefix)
 
     rx_analog_by_id = {
         int(b["can_id"], 0): b for b in mapping.get("rx_analog_blocks", []) if b.get("active", True)

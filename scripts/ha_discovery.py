@@ -258,6 +258,10 @@ def publish_can_discovery(
 
     names = _rx_channel_names(can_mapping.get("rx_analog_blocks", []))
     names |= _rx_channel_names(can_mapping.get("rx_digital_blocks", []))
+    # sdo_record.slots-Werte sind wie rx_*_blocks-Kanäle entweder ein reiner Name oder ein
+    # {"topic": ..., "forward_as_set": ...}-Objekt (siehe can_node.py/publish_rx_value).
+    for channel in can_mapping.get("sdo_record", {}).get("slots", {}).values():
+        names.add(channel["topic"] if isinstance(channel, dict) else channel)
 
     for name in names - published:
         config = build_sensor_config(

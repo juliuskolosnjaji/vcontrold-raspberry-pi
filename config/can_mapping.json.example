@@ -40,5 +40,14 @@
     }
   ],
 
+  "_hinweis_sdo_record": "Bestätigter, aktiv abgefragter Weg (siehe README Abschnitt 3.3, ta_canopen.decode_datensatz): liest periodisch den 98-Byte-Datensatz (Objekt 0x4FF4:04) von der UVR und published die per 'slots' benannten Werte -- braucht KEINE 'CAN-Netzwerkausgang'-Konfiguration auf der UVR (anders als rx_analog_blocks/rx_digital_blocks oben, die auf von der UVR aktiv gesendete Frames warten). 'slots' bildet Slot-Nummer (1-21, wie in canopen_test.py --read-record ausgegeben) auf einen Kanalnamen ab -- welcher Slot welchem UVR-Kanal entspricht, per candump/canopen_test.py ermitteln (Slot 1 = Analogausgang 1 ist bestätigt).",
+  "sdo_record": {
+    "uvr_node_id": 10,
+    "poll_interval_seconds": 30,
+    "slots": {
+      "1": "uvr_vorlauftemperatur"
+    }
+  },
+
   "_beispiel_forward_as_set": "Ein rx-Kanal kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings in rx_analog_blocks/rx_digital_blocks."
 }

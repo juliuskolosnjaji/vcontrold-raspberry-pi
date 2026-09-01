@@ -344,6 +344,28 @@ oben). `ta_can_protocol.py`s alte Blockkodierung aus Abschnitt 3.1 bleibt parall
 (`tx_analog_blocks`/`tx_digital_blocks`), falls das bestätigte Schema für einen Anwendungsfall
 nicht passt.
 
+**Lese-Pfad (UVR → Pi), produktiv über `can_node.py`: `config/can_mapping.json`s `sdo_record`
+integriert das oben beschriebene, bestätigte Datensatz-Auslesen (`0x4FF4:04`) direkt in den
+`can-node`-Dienst, statt es nur manuell per `canopen_test.py --read-record` zu testen:
+
+```json
+"sdo_record": {
+  "uvr_node_id": 10,
+  "poll_interval_seconds": 30,
+  "slots": {"1": "uvr_vorlauftemperatur", "19": "TempKist", "20": "TempWWist"}
+}
+```
+
+`slots` bildet Slot-Nummer (1-21, siehe Byte-Layout oben) auf einen Kanalnamen ab; `can_node.py`
+fragt den Datensatz alle `poll_interval_seconds` Sekunden per SDO ab (eigener Hintergrund-Thread,
+nutzt denselben zweiten CAN-Socket wie der Heartbeat) und published jeden gemappten Slot unter
+`uvr/<name>` (retained) -- inklusive automatischer Home-Assistant-Discovery, genau wie
+`rx_analog_blocks`/`rx_digital_blocks`. **Vorteil gegenüber `rx_analog_blocks`/`rx_digital_blocks`:**
+braucht keine "CAN-Netzwerkausgang"-Konfiguration auf der UVR-Seite und keine per Sniffer ermittelten
+CAN-IDs -- nur die UVR-Node-ID (siehe Abschnitt 3.3) und die gewünschten Slot-Nummern. Welcher Slot
+welchem UVR-Kanal entspricht, per `canopen_test.py --read-record --uvr-node-id <N>` oder
+`sdo_sniffer.py` ermitteln (Slot 1 = Analogausgang 1 ist für dieses Gerät bereits bestätigt).
+
 **Noch offen:** Prüfsummen-Algorithmus des `0x4FF4`-Datensatzes (nicht sicherheitskritisch für
 reines Auslesen), genaue Kanalzuordnung der restlichen Datensatz-Slots, und die Digital-Ausgang-
 Kodierung (`0x180+Node`, Bitmaske) ist noch nicht gegen echte Hardware getestet (nur analog
