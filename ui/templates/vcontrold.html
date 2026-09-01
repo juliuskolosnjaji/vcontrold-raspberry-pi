@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Vcontrold - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Vcontrold</h1>
+
+<div class="card">
+  <p>Gebündelte Ansicht: Vcontrold-Konfiguration, Konsole, vito.xml, Variablen und ein Live-Log
+     der Vitotronic-Kommunikation, je in einem eigenen aufklappbaren Abschnitt. Jeder Abschnitt
+     bleibt auch einzeln erreichbar (<a href="{{ url_for('config_page') }}">Config</a>,
+     <a href="{{ url_for('console') }}">Konsole</a>, <a href="{{ url_for('variables_page') }}">Variablen</a>).</p>
+</div>
+
+{% set flashes = get_flashed_messages(with_categories=true) %}
+{% if flashes %}
+<div class="card">
+  {% for category, msg in flashes %}
+  <p class="{{ category }}">{{ msg }}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+<details class="config-file-block" id="vcontrold-xml" open>
+  <summary>1. Vcontrold-Konfiguration <span class="config-file-path">{{ main_path }}</span></summary>
+  {{ m.xml_editor("main", main_content, "vcontrold.xml", post_action_config, return_to="vcontrold") }}
+</details>
+
+<details class="config-file-block" id="konsole" open>
+  <summary>2. Konsole</summary>
+  {{ m.console_form(commands, result, executed_command, post_action_console, return_to="vcontrold") }}
+</details>
+
+<details class="config-file-block" id="vito-xml">
+  <summary>3. vito.xml <span class="config-file-path">{{ device_path or "nicht konfiguriert (DEVICE_XML_PATH in ui.env setzen)" }}</span></summary>
+  {% if device_path %}
+  {{ m.xml_editor("device", device_content, "vito.xml", post_action_config, return_to="vcontrold") }}
+  {% else %}
+  <div class="config-file-body">
+    <p><em>DEVICE_XML_PATH ist in ui.env nicht gesetzt — vito.xml kann hier nicht bearbeitet werden.</em></p>
+  </div>
+  {% endif %}
+</details>
+
+<details class="config-file-block" id="variablen">
+  <summary>4. Variablen (aus vito.xml)</summary>
+  {{ m.variables_table(cycle_rows, num_cycles, rows, post_action_variables, return_to="vcontrold") }}
+</details>
+
+<details class="config-file-block" id="log">
+  <summary>5. Log der Kommunikation mit Vitotronic</summary>
+  <div class="config-file-body">
+    <p>Live-Log des <code>{{ log_service }}</code>-Diensts (letzte 50 Zeilen, per Klick oder automatisch aktualisiert).</p>
+    <button type="button" onclick="loadVcontroldLog()">Log aktualisieren</button>
+    <label style="display:inline-block; width:auto; margin-left:1rem;">
+      <input type="checkbox" id="log-autorefresh" style="width:auto; display:inline-block;" onchange="toggleAutoRefresh()">
+      automatisch alle 5s aktualisieren
+    </label>
+    <pre id="vcontrold-log-output">(noch nicht geladen — "Log aktualisieren" klicken)</pre>
+  </div>
+</details>
+
+<style>
+  #vcontrold-log-output { max-height: 400px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
+</style>
+
+<script>
+let vcontroldLogTimer = null;
+
+function loadVcontroldLog() {
+  fetch('/diagnostics/log/{{ log_service }}')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('vcontrold-log-output').textContent = data.log || data.error;
+    });
+}
+
+function toggleAutoRefresh() {
+  const checked = document.getElementById('log-autorefresh').checked;
+  if (vcontroldLogTimer) {
+    clearInterval(vcontroldLogTimer);
+    vcontroldLogTimer = null;
+  }
+  if (checked) {
+    loadVcontroldLog();
+    vcontroldLogTimer = setInterval(loadVcontroldLog, 5000);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (location.hash) {
+    const el = document.querySelector(location.hash);
+    if (el && el.tagName === 'DETAILS') {
+      el.open = true;
+      el.scrollIntoView();
+    }
+  }
+});
+</script>
+{% endblock %}

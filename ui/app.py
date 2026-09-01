@@ -10,12 +10,13 @@ Basic-Auth (siehe ui.env) und nicht ungeschützt im Internet exponieren.
 """
 import datetime
 import json
+import os
 import pathlib
 import shutil
 import sys
 import xml.etree.ElementTree as ET
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
@@ -36,6 +37,10 @@ CAN_VARIABLES_PATH = PROJECT_ROOT / "config" / "can_variables.json"
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
 app.config["TEMPLATES_AUTO_RELOAD"] = True  # Templates immer frisch von der Platte lesen
+# Nur für flash()-Nachrichten (signierte Session-Cookie) genutzt, nicht für Auth -- ein bei
+# jedem Start neu generierter Key ist hier unproblematisch (invalidiert höchstens eine gerade
+# offene Flash-Nachricht nach einem Neustart, kein Sicherheitsrisiko).
+app.secret_key = os.urandom(24)
 
 
 def load_env(path: pathlib.Path) -> dict:
@@ -109,12 +114,19 @@ def console():
                 cfg["vclient_host"], cfg["vclient_port"], executed_command
             )
 
+        if request.form.get("return_to") == "vcontrold":
+            if result:
+                category = "message-ok" if result["ok"] else "message-error"
+                flash(f"Konsole ({executed_command}): {result['output']}", category)
+            return redirect(url_for("vcontrold_page") + "#konsole")
+
     return render_template(
         "console.html",
         cfg=cfg,
         commands=commands,
         result=result,
         executed_command=executed_command,
+        post_action=url_for("console"),
     )
 
 
@@ -170,6 +182,12 @@ def config_page():
                     backup_and_write(path, content)
                     message, message_ok = finish_vcontrold_restart(f"{path.name} gespeichert")
 
+        if request.form.get("return_to") == "vcontrold":
+            if message:
+                flash(message, "message-ok" if message_ok else "message-error")
+            anchor = "vcontrold-xml" if target == "main" else "vito-xml"
+            return redirect(url_for("vcontrold_page") + f"#{anchor}")
+
     main_content = main_path.read_text() if main_path.exists() else ""
     device_content = device_path.read_text() if device_path is not None and device_path.exists() else ""
 
@@ -182,6 +200,7 @@ def config_page():
         device_content=device_content,
         message=message,
         message_ok=message_ok,
+        post_action=url_for("config_page"),
     )
 
 
@@ -596,6 +615,49 @@ def load_command_map_ui() -> dict:
     return {k: v for k, v in json.loads(COMMAND_MAP_PATH_UI.read_text()).items() if isinstance(v, dict)}
 
 
+def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, command_map: dict) -> dict:
+    """Baut cycle_rows/rows fürs Variablen-Template aus den geladenen Rohdaten -- gemeinsam
+    genutzt von variables_page() (GET) und vcontrold_page() (eingebettete Ansicht), damit beide
+    garantiert dieselbe Aufbereitung zeigen."""
+    cycle_names = list(cycles.keys())
+    variable_cycle_index = {}
+    for idx, cname in enumerate(cycle_names):
+        for var_name in cycles[cname].get("variables", []):
+            variable_cycle_index[var_name] = idx
+
+    display_names = vito_variables.load_display_names()
+    rows = []
+    for var_name, cmds in variables.items():
+        entry = command_map.get(var_name, {})
+        discovery = entry.get("discovery", {})
+        rows.append(
+            {
+                "name": var_name,
+                "friendly_name": vito_variables.friendly_name(var_name),
+                "display_name": display_names.get(var_name, ""),
+                "get": cmds.get("get"),
+                "set": cmds.get("set"),
+                "cycle_index": variable_cycle_index.get(var_name),
+                "settable": var_name in command_map,
+                "component": discovery.get("component", "number"),
+                "unit": discovery.get("unit", ""),
+                "min": discovery.get("min", ""),
+                "max": discovery.get("max", ""),
+                "step": discovery.get("step", ""),
+                "options": ", ".join(discovery.get("options", [])),
+            }
+        )
+
+    cycle_rows = []
+    for i in range(CYCLE_COUNT):
+        if i < len(cycle_names):
+            cycle_rows.append({"name": cycle_names[i], "interval_seconds": cycles[cycle_names[i]]["interval_seconds"]})
+        else:
+            cycle_rows.append({"name": "", "interval_seconds": 30})
+
+    return {"cycle_rows": cycle_rows, "num_cycles": range(CYCLE_COUNT), "rows": rows}
+
+
 @app.route("/variables", methods=["GET", "POST"])
 def variables_page():
     message = None
@@ -691,50 +753,61 @@ def variables_page():
             message = "Gespeichert." + (f" Neu gestartet: {', '.join(restarted)}." if restarted else "")
             message_ok = True
 
-    # Zyklus-Zuordnung pro Variable ermitteln (welcher Index in cycle_names, falls überhaupt)
-    variable_cycle_index = {}
-    for idx, cname in enumerate(cycle_names):
-        for var_name in cycles[cname].get("variables", []):
-            variable_cycle_index[var_name] = idx
-
-    display_names = vito_variables.load_display_names()
-    rows = []
-    for var_name, cmds in variables.items():
-        entry = command_map.get(var_name, {})
-        discovery = entry.get("discovery", {})
-        rows.append(
-            {
-                "name": var_name,
-                "friendly_name": vito_variables.friendly_name(var_name),
-                "display_name": display_names.get(var_name, ""),
-                "get": cmds.get("get"),
-                "set": cmds.get("set"),
-                "cycle_index": variable_cycle_index.get(var_name),
-                "settable": var_name in command_map,
-                "component": discovery.get("component", "number"),
-                "unit": discovery.get("unit", ""),
-                "min": discovery.get("min", ""),
-                "max": discovery.get("max", ""),
-                "step": discovery.get("step", ""),
-                "options": ", ".join(discovery.get("options", [])),
-            }
-        )
-
-    cycle_rows = []
-    for i in range(CYCLE_COUNT):
-        if i < len(cycle_names):
-            cycle_rows.append({"name": cycle_names[i], "interval_seconds": cycles[cycle_names[i]]["interval_seconds"]})
-        else:
-            cycle_rows.append({"name": "", "interval_seconds": 30})
+        if request.form.get("return_to") == "vcontrold":
+            if message:
+                flash(message, "message-ok" if message_ok else "message-error")
+            return redirect(url_for("vcontrold_page") + "#variablen")
 
     return render_template(
         "variables.html",
-        cycle_rows=cycle_rows,
-        num_cycles=range(CYCLE_COUNT),
-        rows=rows,
         device_xml=cfg["device_xml"],
         message=message,
         message_ok=message_ok,
+        post_action=url_for("variables_page"),
+        **build_variables_view_data(cfg, variables, cycles, command_map),
+    )
+
+
+VCONTROLD_LOG_SERVICE = "vcontrold"  # Dienst, dessen Log Abschnitt 5 ("Log der Kommunikation") zeigt
+
+
+@app.route("/vcontrold")
+def vcontrold_page():
+    """Gebündelte Seite: Vcontrold-Konfiguration (vcontrold.xml), Konsole, vito.xml, Variablen
+    und ein Live-Log der Vitotronic-Kommunikation, je in einem eigenen aufklappbaren Abschnitt.
+    Jeder Abschnitt postet weiterhin an seine eigene, unveränderte Route (/config, /console,
+    /variables) -- die erkennen am 'return_to'-Feld, dass sie hierher zurückleiten sollen, statt
+    ihre eigene Standalone-Seite zu rendern (die unter /config, /console, /variables weiterhin
+    einzeln erreichbar bleiben)."""
+    cfg = get_ui_config()
+
+    main_path = pathlib.Path(cfg["vcontrold_main_xml"])
+    device_path = pathlib.Path(cfg["device_xml"]) if cfg["device_xml"] else None
+    main_content = main_path.read_text() if main_path.exists() else ""
+    device_content = device_path.read_text() if device_path is not None and device_path.exists() else ""
+
+    commands = xml_parser.try_extract_commands(cfg["device_xml"])
+
+    variables = vito_variables.try_load_variables(cfg["device_xml"])
+    cycles = load_read_cycles()
+    command_map = load_command_map_ui()
+
+    return render_template(
+        "vcontrold.html",
+        cfg=cfg,
+        main_path=str(main_path),
+        device_path=str(device_path) if device_path else None,
+        main_content=main_content,
+        device_content=device_content,
+        commands=commands,
+        result=None,
+        executed_command="",
+        device_xml=cfg["device_xml"],
+        log_service=VCONTROLD_LOG_SERVICE,
+        post_action_config=url_for("config_page"),
+        post_action_console=url_for("console"),
+        post_action_variables=url_for("variables_page"),
+        **build_variables_view_data(cfg, variables, cycles, command_map),
     )
 
 

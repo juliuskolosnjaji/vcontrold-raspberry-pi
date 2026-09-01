@@ -16,12 +16,10 @@
 
 <div class="card">
   <h2>Schnellzugriff</h2>
-  <p><a href="{{ url_for('console') }}">→ Kommando-Konsole öffnen</a></p>
+  <p><a href="{{ url_for('vcontrold_page') }}">→ Vcontrold (Konfiguration, Konsole, vito.xml, Variablen, Log)</a></p>
   <p><a href="{{ url_for('diagnostics_page') }}">→ Diagnose ansehen</a></p>
-  <p><a href="{{ url_for('config_page') }}">→ vcontrold.xml / vito.xml importieren oder bearbeiten</a></p>
   <p><a href="{{ url_for('settings') }}">→ MQTT-Einstellungen</a></p>
   <p><a href="{{ url_for('can_settings') }}">→ CAN-Einstellungen</a></p>
-  <p><a href="{{ url_for('variables_page') }}">→ Variablen (Zyklen, Settable, Discovery)</a></p>
   <p><a href="{{ url_for('can_sniffer_page') }}">→ CAN-Bus mitschneiden</a></p>
 </div>
 {% endblock %}

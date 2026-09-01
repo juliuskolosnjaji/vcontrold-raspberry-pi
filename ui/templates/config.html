@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m %}
 {% block title %}Config - vcontrold UI{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
@@ -8,48 +9,19 @@
   <p>Jede Datei kann entweder als Ganzes hochgeladen (importiert) oder direkt als Text bearbeitet
      werden. Beim Speichern wird immer automatisch ein Backup der bisherigen Datei angelegt
      (<code>&lt;datei&gt;.bak.&lt;timestamp&gt;</code>), das XML validiert und <code>vcontrold</code>
-     neu gestartet.</p>
+     neu gestartet. Diese Bereiche findest du auch gebündelt mit Konsole, Variablen und Log auf der
+     <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-Seite.</p>
 </div>
 
 <details class="config-file-block" open>
   <summary>vcontrold.xml <span class="config-file-path">{{ main_path }}</span></summary>
-
-  <div class="config-file-body">
-    <form method="post" enctype="multipart/form-data" class="config-import-form">
-      <input type="hidden" name="target" value="main">
-      <label for="main_file">Datei importieren</label>
-      <input type="file" id="main_file" name="xml_file" accept=".xml">
-      <button type="submit" onclick="return confirm('vcontrold.xml importieren (Backup wird angelegt)?');">Importieren &amp; vcontrold neu starten</button>
-    </form>
-
-    <form method="post" class="config-edit-form">
-      <input type="hidden" name="target" value="main">
-      <label for="main_content">Direkt bearbeiten</label>
-      <textarea id="main_content" name="content" rows="20">{{ main_content }}</textarea>
-      <button type="submit" onclick="return confirm('vcontrold.xml speichern (Backup wird angelegt)?');">Speichern &amp; vcontrold neu starten</button>
-    </form>
-  </div>
+  {{ m.xml_editor("main", main_content, "vcontrold.xml", post_action) }}
 </details>
 
 <details class="config-file-block" open>
   <summary>vito.xml <span class="config-file-path">{{ device_path or "nicht konfiguriert (DEVICE_XML_PATH in ui.env setzen)" }}</span></summary>
-
   {% if device_path %}
-  <div class="config-file-body">
-    <form method="post" enctype="multipart/form-data" class="config-import-form">
-      <input type="hidden" name="target" value="device">
-      <label for="device_file">Datei importieren</label>
-      <input type="file" id="device_file" name="xml_file" accept=".xml">
-      <button type="submit" onclick="return confirm('vito.xml importieren (Backup wird angelegt)?');">Importieren &amp; vcontrold neu starten</button>
-    </form>
-
-    <form method="post" class="config-edit-form">
-      <input type="hidden" name="target" value="device">
-      <label for="device_content">Direkt bearbeiten</label>
-      <textarea id="device_content" name="content" rows="20">{{ device_content }}</textarea>
-      <button type="submit" onclick="return confirm('vito.xml speichern (Backup wird angelegt)?');">Speichern &amp; vcontrold neu starten</button>
-    </form>
-  </div>
+  {{ m.xml_editor("device", device_content, "vito.xml", post_action) }}
   {% else %}
   <div class="config-file-body">
     <p><em>DEVICE_XML_PATH ist in ui.env nicht gesetzt — vito.xml kann hier nicht bearbeitet werden.</em></p>
@@ -62,30 +34,4 @@
   <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
 </div>
 {% endif %}
-
-<style>
-  .config-file-block {
-    background: white;
-    border-radius: 6px;
-    padding: 0.75rem 1.25rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    max-width: none;
-  }
-  .config-file-block summary {
-    font-size: 1.1rem;
-    font-weight: 700;
-    cursor: pointer;
-    padding: 0.4rem 0;
-  }
-  .config-file-path { font-weight: 400; font-size: 0.85rem; color: #666; margin-left: 0.5rem; }
-  .config-file-body { padding-top: 0.75rem; }
-  .config-import-form { border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 1rem; }
-  .config-edit-form textarea {
-    width: 100%;
-    box-sizing: border-box;
-    font-family: monospace;
-    font-size: 0.85rem;
-  }
-</style>
 {% endblock %}

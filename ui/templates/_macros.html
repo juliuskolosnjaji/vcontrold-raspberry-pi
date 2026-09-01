@@ -1,0 +1,209 @@
+{% macro xml_editor(target, content, label, post_action, return_to=None) %}
+<div class="config-file-body">
+  <form method="post" enctype="multipart/form-data" action="{{ post_action }}" class="config-import-form">
+    <input type="hidden" name="target" value="{{ target }}">
+    {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+    <label for="{{ target }}_file">Datei importieren</label>
+    <input type="file" id="{{ target }}_file" name="xml_file" accept=".xml">
+    <button type="submit" onclick="return confirm('{{ label }} importieren (Backup wird angelegt)?');">Importieren &amp; vcontrold neu starten</button>
+  </form>
+
+  <form method="post" action="{{ post_action }}" class="config-edit-form">
+    <input type="hidden" name="target" value="{{ target }}">
+    {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+    <label for="{{ target }}_content">Direkt bearbeiten</label>
+    <textarea id="{{ target }}_content" name="content" rows="20">{{ content }}</textarea>
+    <button type="submit" onclick="return confirm('{{ label }} speichern (Backup wird angelegt)?');">Speichern &amp; vcontrold neu starten</button>
+  </form>
+</div>
+{% endmacro %}
+
+
+{% macro console_form(commands, result, executed_command, post_action, return_to=None) %}
+<div class="card">
+  <form method="post" id="console-form" action="{{ post_action }}" onsubmit="return confirmIfSet();">
+    {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+    <label for="known-command">Bekannte Getter/Setter (aus Geräte-XML)</label>
+    <select id="known-command" onchange="document.getElementById('command').value = this.value;">
+      <option value="">-- auswählen --</option>
+      {% if commands['get'] %}
+      <optgroup label="Getter">
+        {% for c in commands['get'] %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+      {% if commands['set'] %}
+      <optgroup label="Setter (Argument anhängen, z.B. 'setSolltempNormal 21.5')">
+        {% for c in commands['set'] %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    </select>
+    {% if not commands['get'] and not commands['set'] %}
+    <p><em>Keine Kommandos gefunden — DEVICE_XML_PATH in ui.env setzen.</em></p>
+    {% endif %}
+
+    <label for="command">vclient-Kommando (frei editierbar)</label>
+    <input type="text" id="command" name="command" value="{{ executed_command }}" placeholder="z.B. getTempAussen oder setSolltempNormal 21.5">
+
+    <label><input type="checkbox" id="confirmed" name="confirmed" value="1" style="width:auto;display:inline-block;"> Ich bestätige diesen Befehl (nötig bei set-Befehlen)</label>
+
+    <button type="submit">Ausführen</button>
+  </form>
+</div>
+
+{% if result %}
+<div class="card">
+  <h2>Ergebnis</h2>
+  <p class="{{ 'message-ok' if result.ok else 'message-error' }}">{{ 'OK' if result.ok else 'Fehler' }}</p>
+  <pre>{{ result.output }}</pre>
+</div>
+{% endif %}
+
+<script>
+function confirmIfSet() {
+  const cmd = document.getElementById('command').value.trim();
+  const confirmedBox = document.getElementById('confirmed');
+  if (cmd.toLowerCase().startsWith('set') && !confirmedBox.checked) {
+    return confirm('Set-Befehl "' + cmd + '" wirklich an die Heizung senden?') && (confirmedBox.checked = true);
+  }
+  return true;
+}
+</script>
+{% endmacro %}
+
+
+{% macro variables_table(cycle_rows, num_cycles, rows, post_action, return_to=None) %}
+{% if not rows %}
+<div class="card">
+  <p><em>Keine Variablen gefunden. Prüfe DEVICE_XML_PATH in ui.env.</em></p>
+</div>
+{% else %}
+
+<div class="card">
+  <p>Alle Getter/Setter aus deiner Geräte-XML an einer Stelle: welchem Read-Zyklus eine Variable
+     zugeordnet ist, und ob/wie sie per MQTT/CAN setzbar ist (Home-Assistant-Discovery-Metadaten
+     inklusive). MQTT-Topic und CAN-Kanalname sind immer exakt der Variablenname hier links —
+     keine separate Umbenennung nötig. "Anzeigename in HA" ändert nur den in Home Assistant
+     angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet), <code>getTempKsoll</code>/
+     <code>setTempKsoll</code> bleiben dabei unverändert.</p>
+
+  <h2>Zyklen</h2>
+  <table style="max-width: 700px;">
+    <tr><th>Zyklus</th><th>Name</th><th>Intervall (Sek.)</th></tr>
+    {% for i in num_cycles %}
+    <tr>
+      <td>Zyklus {{ i + 1 }}</td>
+      <td><input type="text" name="cycle_name_{{ i }}" form="variables-form" value="{{ cycle_rows[i].name }}" placeholder="z.B. schnell_30s" style="margin-bottom:0;"></td>
+      <td><input type="number" name="cycle_interval_{{ i }}" form="variables-form" value="{{ cycle_rows[i].interval_seconds }}" min="1" style="margin-bottom:0;"></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<form method="post" id="variables-form" action="{{ post_action }}">
+  {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+  <div class="card wide-card">
+    <table class="variables-table">
+      <tr>
+        <th>Variable</th>
+        <th>Anzeigename in HA</th>
+        <th>Get</th>
+        <th>Set</th>
+        <th>Zyklus</th>
+        <th>Settable</th>
+        <th colspan="4">Discovery (nur wenn settable)</th>
+      </tr>
+      {% for row in rows %}
+      <tr class="{{ 'no-set' if not row.set }}">
+        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
+        <td>
+          <input type="text" name="var_display_name_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
+        </td>
+        <td>{{ row['get'] or "—" }}</td>
+        <td>{{ row.set or "—" }}</td>
+        <td>
+          <select name="var_cycle_{{ row.name }}">
+            <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
+            {% for i in num_cycles %}
+            <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>Zyklus {{ i + 1 }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        {% if row.set %}
+        <td>
+          <input type="checkbox" class="settable-toggle" name="var_settable_{{ row.name }}" value="1" {% if row.settable %}checked{% endif %}>
+        </td>
+        <td class="discovery-field" {% if not row.settable %}style="display:none"{% endif %}>
+          <select name="var_component_{{ row.name }}">
+            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
+            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
+            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
+          </select>
+        </td>
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
+          <input type="text" name="var_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C">
+        </td>
+        <td class="discovery-field discovery-number" {% if not row.settable or row.component != "number" %}style="display:none"{% endif %}>
+          <input type="text" name="var_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min">
+          <input type="text" name="var_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max">
+          <input type="text" name="var_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step">
+        </td>
+        <td class="discovery-field discovery-select" {% if not row.settable or row.component != "select" %}style="display:none"{% endif %}>
+          <input type="text" name="var_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ...">
+        </td>
+        {% else %}
+        <td colspan="5" class="no-set-cell">kein Setter in vito.xml → nicht settable</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <button type="submit" onclick="return confirm('Zyklen und Settable-Konfiguration speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
+  </div>
+</form>
+
+{% endif %}
+
+<style>
+  .wide-card { max-width: none; }
+  .variables-table { width: 100%; font-size: 0.85rem; }
+  .variables-table th, .variables-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
+  .variables-table input, .variables-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
+  .variables-table td input[type=text] { min-width: 70px; }
+  .no-set-cell { color: #888; font-style: italic; }
+</style>
+
+<script>
+document.querySelectorAll('.settable-toggle').forEach(function (checkbox) {
+  const row = checkbox.closest('tr');
+  const componentSelect = row.querySelector('select[name^="var_component_"]');
+
+  function update() {
+    const settable = checkbox.checked;
+    const component = componentSelect ? componentSelect.value : 'number';
+    row.querySelectorAll('.discovery-field').forEach(function (el) {
+      if (!settable) {
+        el.style.display = 'none';
+        return;
+      }
+      if (el.classList.contains('discovery-number')) {
+        el.style.display = component === 'number' ? '' : 'none';
+      } else if (el.classList.contains('discovery-select')) {
+        el.style.display = component === 'select' ? '' : 'none';
+      } else {
+        el.style.display = '';
+      }
+    });
+  }
+
+  checkbox.addEventListener('change', update);
+  if (componentSelect) componentSelect.addEventListener('change', update);
+  update();
+});
+</script>
+{% endmacro %}
