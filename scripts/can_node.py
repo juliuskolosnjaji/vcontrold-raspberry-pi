@@ -107,15 +107,19 @@ def handle_sdo_record_frame(
     node_id, record = result
     if sdo_filter_node is not None and node_id != sdo_filter_node:
         return True
+    published = []
     for slot, channel in sdo_slots.items():
         index = slot - 1
         if 0 <= index < len(record["values"]):
             publish_rx_value(client, uvr_topic_prefix, channel, record["values"][index])
+            published.append(f"{channel}={record['values'][index]}")
         else:
             print(
                 f"sdo_record: Slot {slot} außerhalb des Datensatzes ({len(record['values'])} Werte)",
                 file=sys.stderr,
             )
+    if published:
+        print(f"sdo_record (Node {node_id}): {', '.join(published)}")
     return True
 
 
