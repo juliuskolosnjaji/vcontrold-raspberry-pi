@@ -40,8 +40,8 @@ Viessmann Vitogas100 --Optolink--> USB --> vcontrold (daemon, Port 3002)
                                    - nimmt Set-Befehle von MQTT UND von der UVR entgegen
                                    - verifiziert jeden Set-Befehl mit einem Get danach
                                              |                        ^
-                                  MQTT (heizung/*,              internal/can/rx_set/*
-                                  internal/can/tx/*)                    |
+                                        MQTT (heizung/*,          heizung/cmd/*
+                                        retained)                     |
                                              v                        |
                                    MQTT Broker (auf Home Assistant)    |
                                              ^                        |
@@ -60,10 +60,25 @@ Viessmann Vitogas100 --Optolink--> USB --> vcontrold (daemon, Port 3002)
 Zwei getrennte, dauerhaft laufende systemd-Dienste statt vieler kleiner Skripte:
 `orchestrator.py` (Vcontrold-Zyklen, Set-Verifikation, Routing) und `can_node.py`
 (CAN-Encoding/Decoding). Getrennt, damit ein Fehler in der CAN-Dekodierung nicht
-auch die Vcontrold-Zyklen und die MQTT-Befehlsverarbeitung lahmlegt. Beide
-kommunizieren über interne MQTT-Topics auf demselben Broker (kein Cronjob,
+auch die Vcontrold-Zyklen und die MQTT-Befehlsverarbeitung lahmlegt (kein Cronjob,
 da Cronjobs zwischen zwei Läufen keine offene MQTT-/CAN-Verbindung halten und
 damit nicht "on demand" auf Set-Befehle reagieren könnten).
+
+**MQTT-Architektur:** Beide Dienste kommunizieren nicht über separate interne Topics,
+sondern über **dieselben** öffentlichen Topics, die auch Home Assistant nutzt --
+bewusst so vereinfacht, weil Wertüberschreibungen zwischen den drei Quellen
+(Vcontrold, CAN/UVR, Home Assistant) für dieses Projekt unproblematisch sind:
+- `heizung/<Variable>` (retained): der Orchestrator published hier jeden verifizierten
+  Wert. `can_node.py` abonniert denselben Topic, um Werte an die UVR weiterzureichen --
+  kein separater `internal/can/tx`-Kanal mehr. Vorteil des gemeinsamen, retained Topics:
+  nach einem Neustart von `can_node.py` stehen die letzten bekannten Werte sofort wieder
+  zur Verfügung, statt auf den nächsten Orchestrator-Zyklus warten zu müssen.
+- `heizung/cmd/<Variable>`: sowohl Home Assistant als auch `can_node.py` (bei einer
+  UVR-seitigen `forward_as_set`-Anfrage) publishen hierher. Da MQTT selbst nicht verrät,
+  welcher Client eine Nachricht gesendet hat, schickt `can_node.py` in diesem Fall JSON
+  (`{"value": ..., "source": "can"}`) statt eines rohen Werts, damit der Orchestrator die
+  Quelle im Log weiterhin unterscheiden kann (`Quelle: MQTT/HA` bzw. `Quelle: CAN/UVR`) --
+  die eigentliche Set-Verifikation läuft in beiden Fällen identisch ab.
 
 ## 1. vcontrold installieren
 
@@ -109,8 +124,8 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 
 `scripts/orchestrator.py` läuft dauerhaft als systemd-Dienst und übernimmt drei Aufgaben:
 
-1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<Variable>` published (für Home Assistant) UND auf `internal/can/tx/<Variable>` (damit `can_node.py` denselben Stand an die UVR weiterreicht). Alle Getter eines Zyklus werden dabei in **einer** `vclient`-Verbindung abgefragt (`-c get1,get2,...` mit `-t`-Template, `$R1..$Rn`), statt pro Variable eine eigene Verbindung zu öffnen — schneller bei vielen Variablen pro Zyklus, hat aber den Kompromiss, dass ein Verbindungsfehler alle Variablen dieses Zyklus-Durchlaufs betrifft, nicht nur eine einzelne.
-2. **On-demand Set-Befehle**, sowohl von Home Assistant (`heizung/cmd/<Variable>`) als auch von der UVR selbst (`can_node.py` leitet CAN-seitige Set-Anfragen über `internal/can/rx_set/<Variable>` weiter).
+1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<Variable>` published (retained; für Home Assistant UND `can_node.py`, das denselben Topic für die CAN-Weiterleitung an die UVR abonniert, siehe "MQTT-Architektur" oben). Alle Getter eines Zyklus werden dabei in **einer** `vclient`-Verbindung abgefragt (`-c get1,get2,...` mit `-t`-Template, `$R1..$Rn`), statt pro Variable eine eigene Verbindung zu öffnen — schneller bei vielen Variablen pro Zyklus, hat aber den Kompromiss, dass ein Verbindungsfehler alle Variablen dieses Zyklus-Durchlaufs betrifft, nicht nur eine einzelne.
+2. **On-demand Set-Befehle**, sowohl von Home Assistant als auch von der UVR selbst -- beide über denselben Topic `heizung/cmd/<Variable>` (`can_node.py` leitet UVR-seitige Set-Anfragen dorthin weiter, mit Quellenkennung im JSON-Payload, siehe "MQTT-Architektur" oben).
 3. **Verifikation:** nach jedem Set-Befehl wird automatisch der zugehörige Get-Befehl nachgeschickt, und erst der so bestätigte Ist-Wert wird published — nicht der ungeprüfte Set-Rückgabewert.
 
 **Kanonische Namen statt eigener MQTT-Bezeichner:** Es gibt keine separate Umbenennungsebene mehr —
@@ -146,7 +161,7 @@ sudo systemctl start orchestrator
 sudo systemctl status orchestrator
 ```
 
-Der Orchestrator braucht **kein** CAN-Mapping, um zu laufen — die Read-Zyklen und MQTT-Set-Befehle funktionieren unabhängig von `can_node.py` (siehe Abschnitt 3). Die `internal/can/tx/*`-Publishes gehen einfach ins Leere, solange `can_node.py` nicht läuft.
+Der Orchestrator braucht **kein** CAN-Mapping, um zu laufen — die Read-Zyklen und MQTT-Set-Befehle funktionieren unabhängig von `can_node.py` (siehe Abschnitt 3). Die `heizung/*`-Publishes werden einfach von niemandem für CAN weiterverwendet, solange `can_node.py` nicht läuft.
 
 ## 3. CAN-Bus (Technische Alternative UVR) an MQTT — bidirektional
 
@@ -172,7 +187,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now can1-up
 ```
 
-`scripts/can_node.py` läuft als eigener systemd-Dienst und ist der **einzige** Prozess, der den CAN-Socket öffnet — getrennt vom Orchestrator, damit ein CAN-Decoder-Fehler nicht auch die Vcontrold-Zyklen und MQTT-Befehlsverarbeitung lahmlegt. Er kommuniziert mit `orchestrator.py` ausschließlich über interne MQTT-Topics (`internal/can/tx/*`, `internal/can/rx_set/*`).
+`scripts/can_node.py` läuft als eigener systemd-Dienst und ist der **einzige** Prozess, der den CAN-Socket öffnet — getrennt vom Orchestrator, damit ein CAN-Decoder-Fehler nicht auch die Vcontrold-Zyklen und MQTT-Befehlsverarbeitung lahmlegt. Er kommuniziert mit `orchestrator.py` über dieselben öffentlichen MQTT-Topics wie Home Assistant (`heizung/*`, `heizung/cmd/*`, siehe "MQTT-Architektur" oben), nicht über separate interne Topics.
 
 **Warum das rohe TA-CAN-Protokoll reverse-engineert werden muss:** Wir haben die offiziellen TA-Schnittstellen gründlich geprüft (CMI-JSON-API bis Version 8/2025, CoE-Anleitung) — keine davon eignet sich:
 - Die **CMI-JSON-API** ist explizit nur lesend ("obtain values from all connected CAN-nodes") und auf 1 Anfrage/Minute begrenzt — für Set-Befehle und schnelle Zyklen ungeeignet.

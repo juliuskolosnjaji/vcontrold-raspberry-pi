@@ -435,7 +435,7 @@ def can_settings():
 
     # Vorschlagsliste für Senden-Felder (TA-Netzwerkausgänge): alle vito.xml-Variablen, nicht nur
     # die bereits einem Zyklus zugeordneten -- eine Variable OHNE Zyklus hat aber (noch) keinen
-    # aktuellen Wert auf internal/can/tx/<name> und sendet daher nichts, bis sie auf der
+    # aktuellen Wert auf heizung/<name> und sendet daher nichts, bis sie auf der
     # Vcontrold-Seite (Abschnitt "MQTT-Konfiguration") einem Zyklus zugeordnet wird.
     available_subtopics = set(vito_vars.keys())
     for cycle in load_read_cycles().values():

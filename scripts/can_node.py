@@ -4,11 +4,15 @@ CAN-Node: alleiniger Besitzer des CAN-Sockets zur Technische-Alternative-UVR.
 
 Aufgaben (siehe README Abschnitt 3):
   - Sendet analoge/digitale Netzwerkausgänge (aktuelle Vcontrold-Werte) blockweise
-    an die UVR, sobald der Orchestrator neue Werte über interne MQTT-Topics liefert.
+    an die UVR, sobald der Orchestrator einen neuen Wert auf MQTT_TOPIC_HEIZUNG published
+    (kein separater interner Topic mehr -- derselbe retained Topic, den auch Home Assistant
+    abonniert, siehe README "MQTT-Architektur").
   - Empfängt CAN-Frames von der UVR (deren Netzwerkausgänge = unsere Netzwerkeingänge),
     dekodiert sie und published die Werte sowohl direkt für Home Assistant
-    (MQTT_TOPIC_UVR) als auch als "on demand set"-Anfrage für den Orchestrator,
-    falls der Kanal als beschreibbar gemappt ist.
+    (MQTT_TOPIC_UVR) als auch als "on demand set"-Anfrage für den Orchestrator auf
+    MQTT_TOPIC_CMD_HEIZUNG (mit {"value":..,"source":"can"} statt reinem Wert, damit der
+    Orchestrator die Quelle noch von Home-Assistant-Anfragen unterscheiden kann -- MQTT
+    selbst verrät den Absender nicht), falls der Kanal als beschreibbar gemappt ist.
   - Custom CAN-Variablen (config/can_variables.json): komplett unabhängig von
     vcontrold/vito.xml. Home Assistant kann sie direkt per MQTT (MQTT_TOPIC_CMD_UVR)
     setzen, der Wert geht direkt per CAN an die UVR -- die Vitotronic ist nicht beteiligt.
@@ -42,10 +46,6 @@ CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 CAN_MAPPING_PATH = CONFIG_DIR / "can_mapping.json"
 CAN_VARIABLES_PATH = CONFIG_DIR / "can_variables.json"
 
-# Interne MQTT-Topics (Glue zwischen Orchestrator und CAN-Node, gleicher Broker)
-TOPIC_TX_VALUE = "internal/can/tx"          # Orchestrator -> CAN-Node: aktueller Wert für einen tx-Kanal
-TOPIC_RX_SETREQUEST = "internal/can/rx_set"  # CAN-Node -> Orchestrator: UVR fordert Set an
-
 
 def _chunk4(items: list) -> list:
     """Teilt eine Liste in Blöcke zu je 4 auf (mit None aufgefüllt), max. 4 Blöcke
@@ -54,7 +54,7 @@ def _chunk4(items: list) -> list:
     return [padded[i : i + 4] for i in range(0, 16, 4)]
 
 
-def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
+def publish_rx_value(client, uvr_topic_prefix: str, topic_cmd_heizung: str, channel, value) -> None:
     """
     Published einen von der UVR empfangenen Wert.
 
@@ -64,7 +64,11 @@ def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
       - ein Objekt {"topic": "...", "forward_as_set": "<command_map-Key>"}:
         zusätzlich als "on demand set"-Anfrage an den Orchestrator weiterleiten
         (z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic
-        durchreichen soll, siehe README Abschnitt 3).
+        durchreichen soll, siehe README Abschnitt 3) -- auf demselben Topic, den auch
+        Home Assistant für Set-Befehle nutzt (MQTT_TOPIC_CMD_HEIZUNG). Payload als JSON
+        {"value": ..., "source": "can"} statt reinem Wert, damit der Orchestrator die
+        Quelle noch unterscheiden kann (MQTT selbst verrät den Absender nicht, siehe
+        README "MQTT-Architektur").
     """
     if channel is None:
         return
@@ -73,7 +77,7 @@ def publish_rx_value(client, uvr_topic_prefix: str, channel, value) -> None:
         client.publish(f"{uvr_topic_prefix}/{topic}", value, retain=True)
         forward_key = channel.get("forward_as_set")
         if forward_key:
-            client.publish(f"{TOPIC_RX_SETREQUEST}/{forward_key}", value)
+            client.publish(f"{topic_cmd_heizung}/{forward_key}", json.dumps({"value": value, "source": "can"}))
     else:
         client.publish(f"{uvr_topic_prefix}/{channel}", value, retain=True)
 
@@ -89,7 +93,13 @@ def load_sdo_slots(sdo_config: dict | None) -> dict[int, object]:
 
 
 def handle_sdo_record_frame(
-    msg: can.Message, sdo_trackers: dict, sdo_slots: dict, sdo_filter_node: int | None, client, uvr_topic_prefix: str
+    msg: can.Message,
+    sdo_trackers: dict,
+    sdo_slots: dict,
+    sdo_filter_node: int | None,
+    client,
+    uvr_topic_prefix: str,
+    topic_cmd_heizung: str,
 ) -> bool:
     """Passives Mitlesen des UVR-Datensatzes (Objekt 0x4FF4:04) aus dem ohnehin laufenden
     CAN-Empfang, statt einer eigenen aktiven SDO-Anfrage (siehe ta_canopen.process_sdo_frame
@@ -111,7 +121,7 @@ def handle_sdo_record_frame(
     for slot, channel in sdo_slots.items():
         index = slot - 1
         if 0 <= index < len(record["values"]):
-            publish_rx_value(client, uvr_topic_prefix, channel, record["values"][index])
+            publish_rx_value(client, uvr_topic_prefix, topic_cmd_heizung, channel, record["values"][index])
             published.append(f"{channel}={record['values'][index]}")
         else:
             print(
@@ -168,7 +178,7 @@ def configure_interface(interface: str, bitrate: int) -> None:
         print(f"Konnte {interface} nicht mit Bitrate {bitrate} konfigurieren: {result.stderr}", file=sys.stderr)
 
     # Standard-Sendequeue (txqueuelen) ist bei CAN-Interfaces oft sehr klein (z.B. 10). Bei
-    # mehreren fast gleichzeitigen Sends (jede eingehende internal/can/tx-Nachricht löst einen
+    # mehreren fast gleichzeitigen Sends (jede eingehende heizung/<name>-Nachricht löst einen
     # kompletten Neuversand aller Blöcke aus) plus einem ohnehin stark ausgelasteten Bus
     # (CMI<->UVR-Dauerverkehr) reicht das nicht -- der Kernel meldet dann ENOBUFS ("No buffer
     # space available"), siehe README Abschnitt 3.3. Größere Queue puffert den Burst ab, statt
@@ -188,6 +198,12 @@ def main() -> None:
     client, env = make_client("can-node")
     uvr_topic_prefix = env.get("MQTT_TOPIC_UVR", "uvr")
     uvr_cmd_topic_prefix = env.get("MQTT_TOPIC_CMD_UVR", "uvr/cmd")
+    # Gleiche Topics wie der Orchestrator (config/mqtt.env): tx-Werte kommen direkt vom
+    # retained heizung/<name>-Topic statt einem separaten internen Topic (siehe README
+    # "MQTT-Architektur"), Set-Weiterleitungen gehen an denselben Topic wie Home-Assistant-
+    # Set-Befehle (heizung/cmd/<name>), mit Quellenkennung im JSON-Payload.
+    topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
+    topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
     discovery_enabled = env.get("MQTT_DISCOVERY_ENABLED", "true").lower() not in ("false", "0", "no")
     discovery_prefix = env.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
 
@@ -286,9 +302,9 @@ def main() -> None:
                   f"-> COB-ID 0x{cob_id:x} data={data.hex()}")
 
     def on_connect(mqtt_client, userdata, flags, rc):
-        mqtt_client.subscribe(f"{TOPIC_TX_VALUE}/#")
+        mqtt_client.subscribe(f"{topic_heizung}/+")
         mqtt_client.subscribe(f"{uvr_cmd_topic_prefix}/#")
-        print(f"Abonniert: {TOPIC_TX_VALUE}/# und {uvr_cmd_topic_prefix}/#")
+        print(f"Abonniert: {topic_heizung}/+ und {uvr_cmd_topic_prefix}/#")
         if discovery_enabled:
             ha_discovery.publish_can_discovery(
                 mqtt_client, discovery_prefix, mapping, uvr_topic_prefix, uvr_cmd_topic_prefix, can_variables
@@ -310,7 +326,7 @@ def main() -> None:
 
     client.on_connect = on_connect
     client.on_message = on_message
-    client.subscribe(f"{TOPIC_TX_VALUE}/#")
+    client.subscribe(f"{topic_heizung}/+")
     client.subscribe(f"{uvr_cmd_topic_prefix}/#")
     client.loop_start()
 
@@ -323,7 +339,7 @@ def main() -> None:
                     ausgang, value = result
                     channel = rx_ta_output_channels.get(ausgang)
                     if channel is not None:
-                        publish_rx_value(client, uvr_topic_prefix, channel, value)
+                        publish_rx_value(client, uvr_topic_prefix, topic_cmd_heizung, channel, value)
                         print(f"CAN-Analogausgang {ausgang}: {channel}={value}")
 
             elif rx_ta_digital_channels and msg.arbitration_id == rx_ta_digital_can_id:
@@ -337,11 +353,11 @@ def main() -> None:
                             print(f"CAN-Digitalausgang {ausgang} außerhalb 1-16, überspringe", file=sys.stderr)
                             continue
                         value = states[ausgang - 1]
-                        publish_rx_value(client, uvr_topic_prefix, channel, "ON" if value else "OFF")
+                        publish_rx_value(client, uvr_topic_prefix, topic_cmd_heizung, channel, "ON" if value else "OFF")
                         print(f"CAN-Digitalausgang {ausgang}: {channel}={'ON' if value else 'OFF'}")
 
             elif sdo_slots and handle_sdo_record_frame(
-                msg, sdo_trackers, sdo_slots, sdo_filter_node, client, uvr_topic_prefix
+                msg, sdo_trackers, sdo_slots, sdo_filter_node, client, uvr_topic_prefix, topic_cmd_heizung
             ):
                 pass  # SDO-Server-Antwort (0x580+Node) erkannt und verarbeitet, kein unbekanntes Frame
 

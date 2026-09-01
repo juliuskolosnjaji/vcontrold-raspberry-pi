@@ -6,11 +6,13 @@ Ersetzt die vorherigen Einzelskripte vcontrold_to_mqtt.py (Cronjob) und
 mqtt_command_listener.py durch einen dauerhaft laufenden systemd-Dienst, der:
 
   - mehrere Read-Zyklen mit unterschiedlichen Intervallen fährt (config/read_cycles.json)
-    und die Werte per MQTT an Home Assistant UND per internem Topic an can_node.py
-    weiterreicht (damit die UVR über CAN denselben aktuellen Stand sieht),
-  - On-demand Set-Befehle entgegennimmt -- sowohl von Home Assistant
-    (MQTT_TOPIC_CMD_HEIZUNG) als auch von der UVR (can_node.py leitet
-    CAN-seitige Set-Anfragen über ein internes Topic weiter),
+    und die Werte per MQTT auf MQTT_TOPIC_HEIZUNG published (retained) -- Home Assistant UND
+    can_node.py (für die Weiterleitung an die UVR über CAN) abonnieren denselben Topic, kein
+    separater interner Kanal mehr (siehe README "MQTT-Architektur"),
+  - On-demand Set-Befehle auf MQTT_TOPIC_CMD_HEIZUNG entgegennimmt -- sowohl von Home
+    Assistant (Payload = roher Wert) als auch von der UVR (can_node.py published dort
+    ebenfalls, aber als JSON {"value": ..., "source": "can"}, damit die Quelle im Log noch
+    erkennbar bleibt -- MQTT selbst verrät den Absender nicht),
   - nach jedem Set-Befehl den zugehörigen Get-Befehl nachschiebt, um die
     tatsächlich übernommene Vitotronic-Antwort zu verifizieren, statt dem
     Set blind zu vertrauen.
@@ -41,9 +43,6 @@ VCLIENT_PORT = "3002"
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
 COMMAND_MAP_PATH = PROJECT_ROOT / "config" / "command_map.json"
-
-TOPIC_TX_VALUE = "internal/can/tx"          # -> can_node.py: aktueller Wert für CAN-Übertragung
-TOPIC_RX_SETREQUEST = "internal/can/rx_set"  # <- can_node.py: UVR fordert Set an
 
 # vclient gibt bei numerischen Werten Zahl + Einheitstext zurück (z.B. "44.099998 Grad
 # Celsius", "127.500000 %") -- die Einheit ist bereits separat in ha_discovery.py's
@@ -184,8 +183,7 @@ class Orchestrator:
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
-        client.subscribe(f"{TOPIC_RX_SETREQUEST}/#")
-        print(f"Abonniert: {self.topic_cmd_heizung}/# und {TOPIC_RX_SETREQUEST}/#")
+        print(f"Abonniert: {self.topic_cmd_heizung}/#")
         if self.discovery_enabled:
             ha_discovery.publish_discovery(
                 client,
@@ -199,9 +197,24 @@ class Orchestrator:
 
     def _on_message(self, client, userdata, msg):
         key = msg.topic.rsplit("/", 1)[-1]
-        payload = msg.payload.decode().strip()
-        source = "CAN/UVR" if msg.topic.startswith(TOPIC_RX_SETREQUEST) else "MQTT/HA"
+        payload, source = self._parse_cmd_payload(msg.payload.decode().strip())
         self.handle_set_request(key, payload, source)
+
+    @staticmethod
+    def _parse_cmd_payload(raw: str) -> tuple[str, str]:
+        """Set-Anfragen auf topic_cmd_heizung kommen entweder direkt als roher Wert (von Home
+        Assistant) oder als JSON {"value": ..., "source": "can"} (von can_node.py, das UVR-
+        seitige Set-Anfragen über denselben Topic weiterleitet, siehe can_node.py/publish_rx_value
+        -- MQTT selbst verrät den Absender nicht, daher die Quellenkennung im Payload statt im
+        Topic). Gibt (wert_als_string, quelle_fuer_log) zurück."""
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return raw, "MQTT/HA"
+        if isinstance(data, dict) and "value" in data:
+            source = "CAN/UVR" if data.get("source") == "can" else "MQTT/HA"
+            return str(data["value"]), source
+        return raw, "MQTT/HA"
 
     def handle_set_request(self, key: str, payload: str, source: str) -> None:
         if key not in self.command_map:
@@ -230,10 +243,11 @@ class Orchestrator:
         self.publish_value(key, verified_value)
 
     def publish_value(self, key: str, value: str) -> None:
-        """Published einen verifizierten/gelesenen Wert an Home Assistant UND an can_node.py."""
+        """Published einen verifizierten/gelesenen Wert (retained) -- Home Assistant UND
+        can_node.py (für die CAN-Weiterleitung) abonnieren denselben Topic, kein separater
+        interner Kanal mehr."""
         value = extract_numeric_value(value)
         self.client.publish(f"{self.topic_heizung}/{key}", value, retain=True)
-        self.client.publish(f"{TOPIC_TX_VALUE}/{key}", value)
 
     def run_due_cycles(self) -> None:
         now = time.monotonic()
