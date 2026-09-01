@@ -204,12 +204,20 @@ def publish_discovery(
     command_map: dict,
     topic_heizung: str,
     topic_cmd_heizung: str,
+    known_variables: set | None = None,
 ) -> None:
+    """`known_variables` (optional): aktuell in vito.xml existierende Variablennamen. Wird
+    danach gefiltert, damit eine aus vito.xml entfernte, aber noch in read_cycles.json/
+    command_map.json referenzierte Variable nicht weiter als Entity discovered wird (sonst
+    würde sie nie als "verwaist" erkannt, weil sie ja aktiv weiter published würde -- siehe
+    README "Verwaiste Entities werden automatisch entfernt")."""
     reload_display_names()
     # Alle Variablen aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
     all_subtopics = set()
     for cycle in read_cycles.values():
         all_subtopics.update(cycle.get("variables", []))
+    if known_variables is not None:
+        all_subtopics &= known_variables
 
     published = set()
     published_topics = set()
@@ -219,6 +227,8 @@ def publish_discovery(
     for key, mapping in command_map.items():
         if not isinstance(mapping, dict):
             continue  # z.B. "_hinweis"-Dokumentationseintrag
+        if known_variables is not None and key not in known_variables:
+            continue
         discovery_opts = mapping.get("discovery")
         if not discovery_opts:
             continue

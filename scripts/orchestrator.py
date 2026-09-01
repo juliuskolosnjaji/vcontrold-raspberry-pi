@@ -192,6 +192,7 @@ class Orchestrator:
                 self.command_map,
                 self.topic_heizung,
                 self.topic_cmd_heizung,
+                known_variables=set(self.variables.keys()),
             )
             print(f"MQTT-Discovery published (Prefix: {self.discovery_prefix})")
 
