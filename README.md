@@ -296,10 +296,15 @@ node-unabhängig** mit (siehe `sdo_record` unten), statt Node 10 aktiv anzufrage
 *aktuellen* Programmierung der UVR-"CAN-Analogausgänge" und verschiebt sich, sobald die UVR
 umprogrammiert wird -- die ursprüngliche Bestätigung "Slot 1 = Analogausgang 1" oben gilt nicht
 mehr zuverlässig (Ausgang 1 zeigt inzwischen "unbenutzt", während Slot 1 weiterhin einen aktiven
-Temperaturwert liefert; ein neuer Live-Abgleich deutete stattdessen auf Slot 7 ≈ Ausgang 2
-"T.Kessel VL" hin, unbestätigt). Vor Produktivnutzung eines neuen Slots daher immer gegen den
-aktuell am UVR-Display abgelesenen Wert desselben Kanals verifizieren, nicht blind aus dieser
-Dokumentation übernehmen.
+Temperaturwert liefert). Bei diesem konkreten Setup (nur "CAN-Analogausgang 2 = T.Kessel VL" ist
+belegt, alle anderen "unbenutzt") gegen den Live-Wert am Display neu verifiziert: **Slot 7 ≈
+Analogausgang 2** ("T.Kessel VL", über mehrere Minuten parallel mit 33.1-33.2°C bestätigt). Die
+übrigen Slots mit Werten (1-6, 8-18) entsprechen offenbar internen UVR-Messwerten, die gar nicht
+als "CAN-Ausgang" konfiguriert sind -- der Datensatz enthält also mehr als nur die eingerichteten
+CAN-Ausgänge (vermutlich ein interner Logging-Datensatz der UVR, ähnlich einem D-LOGG-Export).
+Vor Produktivnutzung eines neuen Slots daher immer gegen den aktuell am UVR-Display abgelesenen
+Wert desselben Kanals verifizieren, nicht blind aus dieser Dokumentation oder einer anderen
+Installation übernehmen.
 
 Testen:
 
@@ -374,7 +379,7 @@ integriert das oben beschriebene, bestätigte Datensatz-Auslesen (`0x4FF4:04`) d
 ```json
 "sdo_record": {
   "uvr_node_id": null,
-  "slots": {"1": "uvr_vorlauftemperatur", "19": "TempKist", "20": "TempWWist"}
+  "slots": {"7": "uvr_vorlauftemperatur", "19": "TempKist", "20": "TempWWist"}
 }
 ```
 
