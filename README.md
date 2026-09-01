@@ -278,6 +278,29 @@ Format wie in Abschnitt 3.1 angenommen. Zwischenzeitlich **gegen die echte Hardw
   (die laut Architektur per CAN an die UVR durchgereicht werden). Welche UVR-Kanäle genau hinter den
   übrigen Slots stecken, ist noch nicht für jeden Slot einzeln bestätigt.
 
+**Update (Produktivbetrieb, siehe `sdo_record` unten): Node-Zuordnung korrigiert, Slot-Mapping ist
+nicht stabil.** Die CMI-eigene "CAN-Bus"-Geräteübersicht (Menü CAN-Bus) zeigt die tatsächliche
+Belegung: **Node 10 = "UVR16x2"** (offiziell bestätigt), **Node 56 = "CMI-COE"** (die Bridge-
+Verbindung -- nicht Node 65 wie ursprünglich oben vermutet, diese Angabe war veraltet/falsch) und
+**Node 60 = eigener Pi, mit "-"/Verbotsschild-Symbol als nicht korrekt erkannt** (bestätigt exakt
+das oben unter "Als eigener CANopen-Knoten anmelden" beschriebene "Einbahnstraße"-Problem). **Node
+65 taucht in dieser Liste gar nicht auf**, obwohl von dort der Datensatz (`0x4FF4:04`) tatsächlich
+und zuverlässig kommt -- vermutlich eine CMI-interne/virtuelle Verbindung (z.B. eigenes
+SD-Karten-Logging), kein eigenständiges Bus-Gerät. Eine aktive SDO-Anfrage an das offiziell
+gelistete Node 10 liefert `Object does not exist` (0x06020000) für `0x4FF4:04` -- Node 10 selbst
+stellt diesen Datensatz-Export vermutlich nicht als SDO-Server bereit, nur die interne
+CMI-Verbindung (Node 65) tut es. Deshalb liest `can_node.py` den Datensatz **passiv und
+node-unabhängig** mit (siehe `sdo_record` unten), statt Node 10 aktiv anzufragen.
+
+**Wichtiger Vorbehalt zum Slot-Mapping:** Die Zuordnung Slot-Nummer → UVR-Kanal folgt der
+*aktuellen* Programmierung der UVR-"CAN-Analogausgänge" und verschiebt sich, sobald die UVR
+umprogrammiert wird -- die ursprüngliche Bestätigung "Slot 1 = Analogausgang 1" oben gilt nicht
+mehr zuverlässig (Ausgang 1 zeigt inzwischen "unbenutzt", während Slot 1 weiterhin einen aktiven
+Temperaturwert liefert; ein neuer Live-Abgleich deutete stattdessen auf Slot 7 ≈ Ausgang 2
+"T.Kessel VL" hin, unbestätigt). Vor Produktivnutzung eines neuen Slots daher immer gegen den
+aktuell am UVR-Display abgelesenen Wert desselben Kanals verifizieren, nicht blind aus dieser
+Dokumentation übernehmen.
+
 Testen:
 
 ```bash
