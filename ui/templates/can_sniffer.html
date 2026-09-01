@@ -5,8 +5,9 @@
 
 <div class="card">
   <p>Zeichnet für die angegebene Dauer alle Frames auf <code>{{ cfg.can_interface }}</code> auf.
-     Nützlich, um das Protokoll der Technische-Alternative-UVR empirisch zu ermitteln
-     (siehe TODOs in <code>scripts/can_to_mqtt.py</code> / <code>scripts/mqtt_to_can.py</code>).</p>
+     Nützlich, um das Protokoll der Technische-Alternative-UVR empirisch zu ermitteln --
+     z.B. um eine CAN-ID für <code>rx_ta_analog_outputs</code>/<code>rx_ta_digital_outputs</code>
+     zu finden (siehe README Abschnitt 3.4/3.5).</p>
   <label for="duration">Dauer (Sekunden, 1-30)</label>
   <input type="number" id="duration" value="5" min="1" max="30">
   <button onclick="capture()">Aufzeichnen</button>
