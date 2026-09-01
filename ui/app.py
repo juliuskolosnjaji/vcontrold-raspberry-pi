@@ -349,8 +349,10 @@ def load_can_variables() -> dict:
 def can_settings():
     message = None
     message_ok = None
+    cfg = get_ui_config()
     mapping = load_can_mapping()
     can_variables = load_can_variables()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
 
     if request.method == "POST":
         new_mapping = {
@@ -431,7 +433,11 @@ def can_settings():
             else:
                 message, message_ok = "Gespeichert. can-node läuft nicht, wurde nicht neu gestartet.", True
 
-    available_subtopics = set()
+    # Vorschlagsliste für Senden-Felder (TA-Netzwerkausgänge): alle vito.xml-Variablen, nicht nur
+    # die bereits einem Zyklus zugeordneten -- eine Variable OHNE Zyklus hat aber (noch) keinen
+    # aktuellen Wert auf internal/can/tx/<name> und sendet daher nichts, bis sie auf der
+    # Vcontrold-Seite (Abschnitt "MQTT-Konfiguration") einem Zyklus zugeordnet wird.
+    available_subtopics = set(vito_vars.keys())
     for cycle in load_read_cycles().values():
         available_subtopics.update(cycle.get("variables", []))
 
