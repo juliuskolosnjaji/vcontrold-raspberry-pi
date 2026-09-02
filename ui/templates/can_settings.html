@@ -43,45 +43,27 @@
   </div>
 
   <div class="card">
-    <h2>CAN-Analogausgänge empfangen (bestätigtes Format)</h2>
-    <p>Liest die tatsächlichen "CAN-Analogausgänge" der UVR direkt (siehe README Abschnitt 3.4) --
-       eine CAN-ID für alle 16 Ausgänge, per Sniffer ermitteln. Kanalname per Dropdown aus
-       bestehenden Variablen wählen oder frei eintippen (legt bei Bedarf eine neue MQTT-Variable
-       an). Soll dieser Wert zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, auf der
+    <h2>CAN-Analog-/Digitalausgänge empfangen (bestätigtes Format)</h2>
+    <p>Liest die tatsächlichen "CAN-Analogausgänge"/"CAN-Digitalausgänge" der UVR direkt (siehe
+       README Abschnitt 3.4/3.5) -- je eine CAN-ID für alle 16 Ausgänge einer Spalte, per Sniffer
+       ermitteln. Kanalname per Dropdown aus bestehenden Variablen wählen oder frei eintippen
+       (legt bei Bedarf eine neue MQTT-Variable an). Digital published <code>"ON"</code>/<code>"OFF"</code>.
+       Soll ein Wert zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, auf der
        <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite unter
        "Set-Weiterleitung" einrichten.</p>
     <div class="can-id-row">
-      <label for="rx_ta_analog_can_id">CAN-ID (gemeinsam für alle Ausgänge)</label>
+      <label for="rx_ta_analog_can_id">CAN-ID Analog (gemeinsam für alle Ausgänge)</label>
       <input type="text" id="rx_ta_analog_can_id" name="rx_ta_analog_outputs_can_id" value="{{ rx_ta_analog_can_id }}" placeholder="0x1ca">
-    </div>
-    <table class="canvar-table">
-      <tr><th>Ausgang</th><th>Variable</th></tr>
-      {% for i in range(ta_rx_output_slots) %}
-      {% set row = rx_ta_analog_rows[i] %}
-      <tr>
-        <td>{{ i + 1 }}</td>
-        <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ row.topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>CAN-Digitalausgänge empfangen (bestätigtes Format)</h2>
-    <p>Liest die tatsächlichen "CAN-Digitalausgänge" der UVR direkt (siehe README Abschnitt 3.5) --
-       CAN-ID = <code>0x180 + UVR-eigene Node-ID</code> (nicht die "Eigene Knoten-Nummer" oben, das
-       ist die Node-ID dieses Pi). Published <code>"ON"</code>/<code>"OFF"</code>.</p>
-    <div class="can-id-row">
-      <label for="rx_ta_digital_can_id">CAN-ID (gemeinsam für alle Ausgänge)</label>
+      <label for="rx_ta_digital_can_id">CAN-ID Digital (= <code>0x180 + UVR-eigene Node-ID</code>, nicht die "Eigene Knoten-Nummer" oben)</label>
       <input type="text" id="rx_ta_digital_can_id" name="rx_ta_digital_outputs_can_id" value="{{ rx_ta_digital_can_id }}" placeholder="0x18a">
     </div>
     <table class="canvar-table">
-      <tr><th>Ausgang</th><th>Variable</th></tr>
+      <tr><th>Ausgang</th><th>Analog: Variable</th><th>Digital: Variable</th></tr>
       {% for i in range(ta_rx_output_slots) %}
-      {% set row = rx_ta_digital_rows[i] %}
       <tr>
         <td>{{ i + 1 }}</td>
-        <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ row.topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
+        <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ rx_ta_analog_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
+        <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ rx_ta_digital_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
       </tr>
       {% endfor %}
     </table>
@@ -139,9 +121,9 @@
 {% endif %}
 
 <style>
-  .can-id-row { background: #eef2f5; border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.6rem 0 0.4rem; }
+  .can-id-row { background: #eef2f5; border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.6rem 0 0.4rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
   .can-id-row label { font-size: 0.75rem; font-weight: 600; margin: 0 0 0.2rem; }
-  .can-id-row input { margin-bottom: 0; }
+  .can-id-row input { margin-bottom: 0.5rem; }
   .canvar-table { width: 100%; font-size: 0.85rem; }
   .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
