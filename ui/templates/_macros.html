@@ -118,37 +118,25 @@ function confirmIfSet() {
        <code>heizung/&lt;Name&gt;</code> published. MQTT-Topic und CAN-Kanalname sind immer exakt
        der Variablenname hier links. Anzeigename und Home-Assistant-Konfiguration (ob/wie eine
        Variable per MQTT/CAN setzbar ist) werden auf der eigenständigen
-       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite gepflegt.
-       "Aktiv" abwählen blendet eine Variable aus, ohne ihr get/set-Kommando aus
-       <code>vito.xml</code> entfernen zu müssen -- neu aus vito.xml erkannte Variablen sind
-       immer zunächst aktiv.</p>
-    <label style="width:auto;display:inline-block;">
-      <input type="checkbox" id="hide-inactive" style="width:auto;display:inline-block;">
-      nur aktive Variablen anzeigen
-    </label>
+       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite gepflegt. Eine
+       Variable, die du nicht brauchst, lässt du hier einfach ohne Zyklus ("— keiner —").</p>
   </div>
 
   <div class="card wide-card">
     <table class="variables-table">
       <tr>
-        <th>Aktiv</th>
         <th>Variable</th>
         <th>Get</th>
         <th>Set</th>
-        <th>Settable?</th>
         <th>Zyklus</th>
       </tr>
       {% for row in rows %}
-      <tr class="var-row {{ 'var-inactive' if not row.active }}">
-        <td style="text-align:center;">
-          <input type="checkbox" name="var_active_{{ row.name }}" value="1" class="active-toggle" {% if row.active %}checked{% endif %} style="width:auto;">
-        </td>
+      <tr>
         <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
         <td>{{ row['get'] or "—" }}</td>
         <td>{{ row.set or "—" }}</td>
-        <td>{{ "ja" if row.settable else "nein" }}</td>
         <td>
-          <select name="var_cycle_{{ row.name }}" class="cycle-select" {% if not row.active %}disabled{% endif %}>
+          <select name="var_cycle_{{ row.name }}">
             <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
             {% for i in num_cycles %}
             <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>{{ cycle_rows[i].name or ('Zyklus ' ~ (i + 1)) }}</option>
@@ -172,30 +160,7 @@ function confirmIfSet() {
   .variables-table th, .variables-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .variables-table input, .variables-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
   .variables-table td input[type=text] { min-width: 70px; }
-  .var-inactive { opacity: 0.45; }
 </style>
-
-<script>
-document.querySelectorAll('.active-toggle').forEach(function (toggle) {
-  const row = toggle.closest('tr');
-  const cycleSelect = row.querySelector('.cycle-select');
-  function update() {
-    row.classList.toggle('var-inactive', !toggle.checked);
-    cycleSelect.disabled = !toggle.checked;
-  }
-  toggle.addEventListener('change', update);
-});
-
-const hideInactiveBox = document.getElementById('hide-inactive');
-if (hideInactiveBox) {
-  hideInactiveBox.addEventListener('change', function () {
-    document.querySelectorAll('.var-row').forEach(function (row) {
-      const checked = row.querySelector('.active-toggle').checked;
-      row.hidden = hideInactiveBox.checked && !checked;
-    });
-  });
-}
-</script>
 {% endmacro %}
 
 
