@@ -100,22 +100,29 @@
 
   <div class="card">
     <h2>TA-Netzwerkausgänge senden (bestätigtes Schema)</h2>
-    <p>Sendet Werte im tatsächlich von TA verwendeten Format (COB-ID <code>0x200/0x280/0x300/0x380 +
+    <p><strong>Sendet immer den MQTT-Topic <code>heizung/&lt;Name&gt;</code> — nie direkt einen
+       Vcontrold-Wert.</strong> Vcontrold und CAN sind komplett getrennte Prozesse (<code>orchestrator.py</code>
+       bzw. <code>can-node.py</code>); die einzige Verbindung zwischen ihnen ist MQTT (siehe README
+       "MQTT-Architektur"). Trag hier also den Namen eines MQTT-Topics <code>heizung/&lt;Name&gt;</code>
+       ein (ohne das Präfix <code>heizung/</code>), dessen aktuellen Wert <code>can-node</code> per CAN im
+       tatsächlich von TA verwendeten Format sendet (COB-ID <code>0x200/0x280/0x300/0x380 +
        Eigene Knoten-Nummer</code> für Analog, <code>0x180 + Eigene Knoten-Nummer</code> für Digital —
        siehe README Abschnitt 3.3). "Ausgang" ist hier <strong>keine UVR-Nummer</strong>, sondern
        deine frei gewählte Sendekanal-Nummer -- auf der UVR muss dafür ein "CAN-Analogeingang"/
        "CAN-Digitaleingang" mit <strong>Knotennummer = deine "Eigene Knoten-Nummer" oben</strong>
        und <strong>Ausgangsnummer = dieselbe Zeilennummer hier</strong> angelegt werden. Am besten
        nur so viele Zeilen belegen wie Werte gebraucht werden, jede Variable in genau einer Zeile.</p>
-    <p>Freitextfeld mit Vorschlägen aus allen <code>vito.xml</code>-Variablen (siehe
-       <a href="{{ url_for('variables_page') }}">Variablen</a>-Seite) — eine vcontrold-Variable
-       sendet aber nur dann tatsächlich einen Wert, wenn sie zusätzlich einem Lese-Zyklus
-       zugeordnet ist (Abschnitt "MQTT-Konfiguration"/"Zyklen"). Du kannst statt einer vcontrold-
-       Variable auch einen beliebigen anderen Namen eintragen, falls der Wert nicht aus vcontrold
-       kommt (z.B. von Home Assistant direkt auf <code>heizung/&lt;name&gt;</code>
-       published). Analog-Kodierung ist gegen echte Hardware bestätigt, Digital noch nicht getestet.</p>
+    <p>Die Vorschlagsliste im Freitextfeld zeigt alle <code>vito.xml</code>-Variablen (siehe
+       <a href="{{ url_for('variables_page') }}">Variablen</a>-Seite), weil das der häufigste Fall
+       ist — eine vito.xml-Variable landet aber selbst nur dann auf <code>heizung/&lt;Name&gt;</code>,
+       wenn sie zusätzlich einem Lese-Zyklus zugeordnet ist (Abschnitt "MQTT-Konfiguration"/"Zyklen").
+       Ohne Zyklus steht auf dem Topic nie ein Wert, und <code>can-node</code> sendet nichts. Genauso
+       kannst du einen Namen eintragen, der gar nicht aus vito.xml stammt — solange irgendetwas
+       (z.B. Home Assistant direkt) auf <code>heizung/&lt;Name&gt;</code> published, sendet
+       <code>can-node</code> diesen Wert, unabhängig von der Quelle. Analog-Kodierung ist gegen echte Hardware bestätigt, Digital
+       noch nicht getestet.</p>
     <table class="canvar-table">
-      <tr><th>Ausgang</th><th>Analog-Variable</th><th>Digital-Variable</th></tr>
+      <tr><th>Ausgang</th><th>Analog: heizung/…</th><th>Digital: heizung/…</th></tr>
       {% for i in range(total_slots) %}
       <tr>
         <td>{{ i + 1 }}</td>
