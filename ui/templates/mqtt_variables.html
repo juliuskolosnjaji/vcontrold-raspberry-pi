@@ -13,9 +13,14 @@
      CAN-ID/welcher Sendekanal eine Variable nutzt, bleibt auf der CAN-Einstellungen-Seite.</p>
 </div>
 
+<div class="card live-refresh-row">
+  <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+  <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder Variable (kurzer Snapshot, keine Dauerverbindung).</span>
+</div>
+
 <form method="post">
-  <div class="card wide-card">
-    <h2>vito.xml-Variablen</h2>
+  <details class="config-file-block wide-block" open>
+    <summary>vito.xml-Variablen</summary>
     <p>Erscheint automatisch, sobald vito.xml einen Getter dafür hat. "Anzeigename" ändert nur den
        in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet),
        <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert. "Schreibbar" ist nur
@@ -30,7 +35,7 @@
       </tr>
       {% for row in vito_rows %}
       <tr class="{{ 'no-set' if not row.has_setter }}">
-        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
+        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code> <span class="live-badge" data-live data-live-name="{{ row.name }}"></span></td>
         <td>
           <input type="text" name="vitovar_display_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
         </td>
@@ -64,10 +69,10 @@
       </tr>
       {% endfor %}
     </table>
-  </div>
+  </details>
 
-  <div class="card wide-card">
-    <h2>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</h2>
+  <details class="config-file-block wide-block" open>
+    <summary>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</summary>
     <p>Name existiert NICHT in vito.xml. Komplett unabhängig von vito.xml/vcontrold: Home Assistant
        kann diese Werte direkt lesen <strong>und</strong> schreiben, der Wert geht per CAN direkt an
        die UVR. Den Namen zusätzlich als Kanal bei
@@ -86,7 +91,7 @@
       {% for row in custom_rows %}
       {% set i = loop.index0 %}
       <tr class="canvar-row">
-        <td><input type="text" name="customvar_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor"></td>
+        <td><input type="text" name="customvar_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor" data-live></td>
         <td><input type="text" name="customvar_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
         <td>
           <select name="customvar_component_{{ i }}" class="canvar-component">
@@ -111,11 +116,11 @@
       </tbody>
     </table>
     <button type="button" id="add-customvar-row">+ Zeile hinzufügen</button>
-  </div>
+  </details>
 
   <template id="customvar-row-template">
     <tr class="canvar-row">
-      <td><input type="text" name="customvar_name___IDX__" placeholder="z.B. uvr_sollwert_kollektor"></td>
+      <td><input type="text" name="customvar_name___IDX__" placeholder="z.B. uvr_sollwert_kollektor" data-live></td>
       <td><input type="text" name="customvar_display___IDX__" placeholder="optional"></td>
       <td>
         <select name="customvar_component___IDX__" class="canvar-component">
@@ -138,8 +143,8 @@
     </tr>
   </template>
 
-  <div class="card wide-card">
-    <h2>Set-Weiterleitung (empfangener Wert → Vitotronic-Parameter setzen)</h2>
+  <details class="config-file-block wide-block" open>
+    <summary>Set-Weiterleitung (empfangener Wert → Vitotronic-Parameter setzen)</summary>
     <p><strong>Anwendungsfall:</strong> ein Wert, den du woanders bereits als MQTT-Variable hast
        (typischerweise ein von der UVR per CAN empfangener Wert, z.B. ein dort berechneter
        Raumsollwert), soll einen echten <strong>Set-Befehl in der Vitotronic</strong> auslösen --
@@ -162,10 +167,10 @@
       {% for row in mapping_rows %}
       {% set i = loop.index0 %}
       <tr class="canvar-row">
-        <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_raumsollwert"></td>
+        <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_raumsollwert" data-live></td>
         <td style="text-align:center;">→</td>
         <td>
-          <select name="mapping_target_{{ i }}">
+          <select name="mapping_target_{{ i }}" data-live>
             <option value="" {% if not row.target %}selected{% endif %}>— keine —</option>
             {% for k in settable_targets %}
             <option value="{{ k }}" {% if row.target == k %}selected{% endif %}>{{ k }}</option>
@@ -182,7 +187,7 @@
        Auswahl.</em></p>
     {% endif %}
     <button type="button" id="add-mapping-row">+ Zeile hinzufügen</button>
-  </div>
+  </details>
 
   <datalist id="known-variable-names">
     {% for n in known_variable_names %}
@@ -192,10 +197,10 @@
 
   <template id="mapping-row-template">
     <tr class="canvar-row">
-      <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_raumsollwert"></td>
+      <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_raumsollwert" data-live></td>
       <td style="text-align:center;">→</td>
       <td>
-        <select name="mapping_target___IDX__">
+        <select name="mapping_target___IDX__" data-live>
           <option value="" selected>— keine —</option>
           {% for k in settable_targets %}
           <option value="{{ k }}">{{ k }}</option>
@@ -286,5 +291,7 @@ document.getElementById('add-mapping-row').addEventListener('click', function ()
   document.getElementById('mapping-tbody').appendChild(clone);
   nextMappingIndex++;
 });
+
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
 </script>
 {% endblock %}

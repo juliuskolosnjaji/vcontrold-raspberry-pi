@@ -76,7 +76,8 @@ function confirmIfSet() {
 
 
 {% macro cycles_config(cycle_rows, num_cycles) %}
-<div class="card">
+<details class="config-file-block" open>
+  <summary>Zyklen</summary>
   <p>Wie oft welcher Read-Zyklus abgefragt wird. Welche Variable zu welchem Zyklus gehört, wird
      unten in der Variablen-Zuordnung pro Variable zugeordnet -- die Zuordnung landet trotzdem
      zusammen mit diesen Zyklus-Definitionen in <code>config/read_cycles.json</code> (ein
@@ -94,7 +95,7 @@ function confirmIfSet() {
   <p><em>Hinweis: die Felder hier gehören zum selben Formular wie die MQTT-Konfiguration
      (nutzt <code>form="variables-form"</code>) -- der Speichern-Button steht dort unten, deckt
      aber beide Abschnitte ab.</em></p>
-</div>
+</details>
 {% endmacro %}
 
 
@@ -122,7 +123,12 @@ function confirmIfSet() {
        Variable, die du nicht brauchst, lässt du hier einfach ohne Zyklus ("— keiner —").</p>
   </div>
 
-  <div class="card wide-card">
+  <details class="config-file-block wide-block" open>
+    <summary>Variablen-Zuordnung</summary>
+    <div class="card live-refresh-row" style="box-shadow:none;padding:0 0 0.5rem;">
+      <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder Variable (kurzer Snapshot, keine Dauerverbindung).</span>
+    </div>
     <table class="variables-table">
       <tr>
         <th>Variable</th>
@@ -132,7 +138,7 @@ function confirmIfSet() {
       </tr>
       {% for row in rows %}
       <tr>
-        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
+        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code> <span class="live-badge" data-live data-live-name="{{ row.name }}"></span></td>
         <td>{{ row['get'] or "—" }}</td>
         <td>{{ row.set or "—" }}</td>
         <td>
@@ -146,13 +152,17 @@ function confirmIfSet() {
       </tr>
       {% endfor %}
     </table>
-  </div>
+  </details>
 
   <div class="card">
     <button type="submit" onclick="return confirm('Zyklen- und Variablen-Zuordnung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
   </div>
   {% endif %}
 </form>
+
+<script>
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
 
 <style>
   .wide-card { max-width: none; }
@@ -168,7 +178,8 @@ function confirmIfSet() {
 {#- Nur relevant, wenn vito.xml Kommandos enthält, die nicht der getXXX/setXXX-Namenskonvention
    folgen (siehe vito_variables.load_variables()) -- der Aufrufer rendert diese Macro nur, wenn
    unassigned_commands nicht leer ist. -#}
-<div class="card wide-card">
+<details class="config-file-block wide-block" open>
+  <summary>Nicht erkannte Kommandos</summary>
   <p><strong>{{ unassigned_commands|length }} Kommando(s) in vito.xml folgen nicht der
      get&lt;Name&gt;/set&lt;Name&gt;-Konvention</strong> und wurden deshalb NICHT automatisch zu
      einer Variable zusammengefasst (unten aufgelistet). Falls zwei davon zusammengehören (z.B.
@@ -181,18 +192,19 @@ function confirmIfSet() {
     <tr><td><code>{{ c.name }}</code></td><td>{{ c.description }}</td></tr>
     {% endfor %}
   </table>
-</div>
+</details>
 
 <form method="post" id="vito-overrides-form" action="{{ post_action }}">
   {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
-  <div class="card wide-card">
+  <details class="config-file-block wide-block" open>
+    <summary>Manuelle Get/Set-Zuordnung</summary>
     <table class="variables-table">
       <tr><th>Kanonischer Name</th><th>Get-Kommando</th><th>Set-Kommando</th></tr>
       <tbody id="override-tbody">
       {% for row in override_rows %}
       {% set i = loop.index0 %}
       <tr>
-        <td><input type="text" name="override_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. KesselTemp"></td>
+        <td><input type="text" name="override_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. KesselTemp" data-live></td>
         <td>
           <select name="override_get_{{ i }}">
             <option value="">— keiner —</option>
@@ -214,7 +226,7 @@ function confirmIfSet() {
       {% for _ in range(3) %}
       {% set i = override_rows|length + loop.index0 %}
       <tr>
-        <td><input type="text" name="override_name_{{ i }}" value="" placeholder="z.B. KesselTemp"></td>
+        <td><input type="text" name="override_name_{{ i }}" value="" placeholder="z.B. KesselTemp" data-live></td>
         <td>
           <select name="override_get_{{ i }}">
             <option value="">— keiner —</option>
@@ -236,7 +248,7 @@ function confirmIfSet() {
       </tbody>
     </table>
     <button type="button" id="add-override-row">+ Zeile hinzufügen</button>
-  </div>
+  </details>
   <div class="card">
     <button type="submit" onclick="return confirm('Get/Set-Zuordnung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
   </div>
@@ -244,7 +256,7 @@ function confirmIfSet() {
 
 <template id="override-row-template">
   <tr>
-    <td><input type="text" name="override_name___IDX__" placeholder="z.B. KesselTemp"></td>
+    <td><input type="text" name="override_name___IDX__" placeholder="z.B. KesselTemp" data-live></td>
     <td>
       <select name="override_get___IDX__">
         <option value="">— keiner —</option>

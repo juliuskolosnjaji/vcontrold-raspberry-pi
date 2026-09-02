@@ -6,14 +6,11 @@
 <h1>Variablen (aus {{ device_xml or "vito.xml (nicht konfiguriert)" }})</h1>
 <p><a href="{{ url_for('vcontrold_page') }}">→ Auch gebündelt auf der Vcontrold-Seite</a></p>
 
-<h2>Zyklen</h2>
 {{ m.cycles_config(cycle_rows, num_cycles) }}
 
-<h2>Variablen-Zuordnung</h2>
 {{ m.cycle_assignment_config(cycle_rows, num_cycles, rows, post_action) }}
 
 {% if unassigned_commands %}
-<h2>Get/Set-Zuordnung überschreiben</h2>
 {{ m.vito_overrides_config(unassigned_commands, raw_commands, override_rows, url_for('vito_overrides_page')) }}
 {% endif %}
 

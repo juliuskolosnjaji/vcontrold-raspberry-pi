@@ -19,5 +19,72 @@
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // Gemeinsamer Live-Werte-Mechanismus für alle Seiten mit CAN-/MQTT-Variablen-Tabellen: die
+    // UI hält keine Dauerverbindung zum Broker, sondern holt auf Klick per /api/live-values einen
+    // kurzen Snapshot (siehe scripts/mqtt_snapshot.py). Ein Element markiert sich per
+    // [data-live]-Attribut als Ziel; der abzufragende Name kommt entweder aus [data-live-name]
+    // (fester Name, z.B. bei einer nicht editierbaren <code>-Zelle) oder, falls nicht gesetzt, aus
+    // dem aktuellen .value des Elements selbst (Freitext-/Auswahlfelder) -- so werden auch per JS
+    // dynamisch hinzugefügte Zeilen ("+ Zeile") automatisch mit erfasst, ohne Sonderbehandlung.
+    function attachLiveValues(button, container) {
+      if (!button || !container) return;
+
+      function nameFor(el) {
+        return el.dataset.liveName || (el.value || '').trim();
+      }
+
+      function badgeFor(el) {
+        if (el.tagName === 'SPAN') return el;
+        let sib = el.nextElementSibling;
+        if (!sib || !sib.classList.contains('live-badge')) {
+          sib = document.createElement('span');
+          sib.className = 'live-badge';
+          el.insertAdjacentElement('afterend', sib);
+        }
+        return sib;
+      }
+
+      button.addEventListener('click', function () {
+        const targets = Array.from(container.querySelectorAll('[data-live]'));
+        const names = [...new Set(targets.map(nameFor).filter(Boolean))];
+        if (!names.length) {
+          targets.forEach(function (el) { badgeFor(el).textContent = ''; });
+          return;
+        }
+        button.disabled = true;
+        const original = button.textContent;
+        button.textContent = 'Lädt…';
+        fetch('/api/live-values', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ names: names }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            targets.forEach(function (el) {
+              const name = nameFor(el);
+              const badge = badgeFor(el);
+              if (name && data[name]) {
+                const unit = data[name].unit ? ' ' + data[name].unit : '';
+                badge.textContent = '→ ' + data[name].value + unit;
+                badge.classList.remove('live-badge-empty');
+              } else {
+                badge.textContent = name ? '→ –' : '';
+                badge.classList.add('live-badge-empty');
+              }
+            });
+          })
+          .catch(function () {
+            targets.forEach(function (el) { badgeFor(el).textContent = ''; });
+          })
+          .finally(function () {
+            button.disabled = false;
+            button.textContent = original;
+          });
+      });
+    }
+  </script>
 </body>
 </html>

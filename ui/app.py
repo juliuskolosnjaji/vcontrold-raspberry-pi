@@ -26,7 +26,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts
 
 import can_sniffer
 import diagnostics
+import ha_discovery
 import mqtt_mapping
+import mqtt_snapshot
 import mqtt_variables as mqtt_vars
 import ta_can_protocol as proto
 import vclient_wrapper
@@ -1000,5 +1002,46 @@ def can_sniffer_capture():
     return jsonify({"frames": frames})
 
 
+@app.route("/api/live-values", methods=["POST"])
+def live_values():
+    """Kurzer MQTT-Snapshot für die "Live-Wert"-Anzeige neben konfigurierten Variablen (siehe
+    scripts/mqtt_snapshot.py) -- die UI selbst hält keine Dauerverbindung zum Broker. Erwartet
+    JSON {"names": [...]} mit kanonischen MQTT-Variablennamen, gibt {name: {"value":...,
+    "unit":...}} zurück für alle, die innerhalb kurzer Zeit einen (retained) Wert liefern. Ob ein
+    Name auf heizung/<name> oder uvr/<name> liegt (bzw. hier: die tatsächlich konfigurierten
+    Topic-Präfixe aus config/mqtt.env), ergibt sich wie überall automatisch daraus, ob der Name
+    eine vito.xml-Variable ist."""
+    payload = request.get_json(silent=True) or {}
+    names = payload.get("names")
+    if not isinstance(names, list) or not names:
+        return jsonify({})
+
+    cfg = get_ui_config()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])
+    mqtt_env = load_env(MQTT_ENV_PATH)
+    topic_heizung = mqtt_env.get("MQTT_TOPIC_HEIZUNG", "heizung")
+    topic_uvr = mqtt_env.get("MQTT_TOPIC_UVR", "uvr")
+
+    topic_for_name = {}
+    for name in names:
+        if isinstance(name, str) and name:
+            topic_for_name[name] = f"{topic_heizung}/{name}" if name in vito_vars else f"{topic_uvr}/{name}"
+
+    raw_values = mqtt_snapshot.fetch(list(topic_for_name.values()))
+
+    mqtt_variables_data = mqtt_vars.load()
+    result = {}
+    for name, topic in topic_for_name.items():
+        if topic not in raw_values:
+            continue
+        entry = mqtt_variables_data.get(name, {})
+        unit = (
+            entry.get("discovery", {}).get("unit")
+            or ha_discovery.SENSOR_METADATA.get(name, {}).get("unit_of_measurement", "")
+        )
+        result[name] = {"value": raw_values[topic], "unit": unit}
+    return jsonify(result)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, threaded=True)

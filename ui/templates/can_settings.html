@@ -27,8 +27,14 @@
   {% endfor %}
 </datalist>
 
+<div class="card live-refresh-row">
+  <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+  <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jedem ausgefüllten Variablenfeld (kurzer Snapshot, keine Dauerverbindung).</span>
+</div>
+
 <form method="post">
-  <div class="card">
+  <details class="config-file-block" open>
+    <summary>Grundeinstellungen</summary>
     <label for="bitrate">CAN-Bitrate</label>
     <select id="bitrate" name="bitrate">
       {% for rate in [5000, 10000, 20000, 50000, 125000, 250000, 500000] %}
@@ -40,10 +46,10 @@
 
     <label for="own_node_number">Eigene Knoten-Nummer</label>
     <input type="number" id="own_node_number" name="own_node_number" value="{{ own_node_number }}" min="1" max="62">
-  </div>
+  </details>
 
-  <div class="card">
-    <h2>CAN-Analog-/Digitalausgänge empfangen (bestätigtes Format)</h2>
+  <details class="config-file-block wide-block" open>
+    <summary>CAN-Analog-/Digitalausgänge empfangen (bestätigtes Format)</summary>
     <p>Liest die tatsächlichen "CAN-Analogausgänge"/"CAN-Digitalausgänge" der UVR direkt (siehe
        README Abschnitt 3.4/3.5) -- je eine CAN-ID für alle 16 Ausgänge einer Spalte, per Sniffer
        ermitteln. Kanalname per Dropdown aus bestehenden Variablen wählen oder frei eintippen
@@ -62,15 +68,15 @@
       {% for i in range(ta_rx_output_slots) %}
       <tr>
         <td>{{ i + 1 }}</td>
-        <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ rx_ta_analog_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
-        <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ rx_ta_digital_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname"></td>
+        <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ rx_ta_analog_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname" data-live></td>
+        <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ rx_ta_digital_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname" data-live></td>
       </tr>
       {% endfor %}
     </table>
-  </div>
+  </details>
 
-  <div class="card">
-    <h2>TA-Netzwerkausgänge senden (bestätigtes Schema)</h2>
+  <details class="config-file-block wide-block" open>
+    <summary>TA-Netzwerkausgänge senden (bestätigtes Schema)</summary>
     <p><strong>Sendet immer den MQTT-Topic <code>heizung/&lt;Name&gt;</code> — nie direkt einen
        Vcontrold-Wert.</strong> Vcontrold und CAN sind komplett getrennte Prozesse (<code>orchestrator.py</code>
        bzw. <code>can-node.py</code>); die einzige Verbindung zwischen ihnen ist MQTT (siehe README
@@ -102,12 +108,12 @@
       {% for i in range(total_slots) %}
       <tr>
         <td>{{ i + 1 }}</td>
-        <td><input type="text" name="ta_net_analog_{{ i }}" value="{{ ta_net_analog[i] or '' }}" list="tx-subtopics" placeholder="z.B. TempKist"></td>
-        <td><input type="text" name="ta_net_digital_{{ i }}" value="{{ ta_net_digital[i] or '' }}" list="tx-subtopics" placeholder="z.B. BrennerStatus"></td>
+        <td><input type="text" name="ta_net_analog_{{ i }}" value="{{ ta_net_analog[i] or '' }}" list="tx-subtopics" placeholder="z.B. TempKist" data-live></td>
+        <td><input type="text" name="ta_net_digital_{{ i }}" value="{{ ta_net_digital[i] or '' }}" list="tx-subtopics" placeholder="z.B. BrennerStatus" data-live></td>
       </tr>
       {% endfor %}
     </table>
-  </div>
+  </details>
 
   <div class="card">
     <button type="submit" onclick="return confirm('CAN-Einstellungen speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
@@ -128,4 +134,8 @@
   .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
 </style>
+
+<script>
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
 {% endblock %}

@@ -53,3 +53,9 @@ main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
   font-family: monospace;
   font-size: 0.85rem;
 }
+.config-file-block.wide-block { max-width: none; }
+
+/* Live-Werte (Snapshot per Klick, siehe attachLiveValues() in base.html) */
+.live-badge { display: inline-block; margin-left: 0.4rem; font-size: 0.8rem; font-weight: 600; color: #2e7d32; white-space: nowrap; }
+.live-badge-empty { color: #999; font-weight: 400; }
+.live-refresh-row { margin-bottom: 0.75rem; }
