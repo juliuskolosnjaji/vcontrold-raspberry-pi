@@ -689,7 +689,9 @@ def vcontrold_page():
     )
 
 
-MQTT_VARIABLE_ROWS = 10  # Anzahl zusätzlicher freier Zeilen für Nicht-vito.xml-Variablen (CAN-only)
+BLANK_CUSTOM_VARIABLE_ROWS = 3  # zusätzliche leere Zeilen für neue Custom-CAN-Variablen; "+ Zeile"
+# im Browser fügt bei Bedarf beliebig mehr hinzu (kein fixes Limit, da die Anzahl je nach
+# CAN-Ausbaustufe stark variieren kann)
 
 
 def build_mqtt_variable_rows(entry: dict) -> dict:
@@ -735,7 +737,15 @@ def mqtt_variables_page():
             if entry:
                 new_variables[var_name] = entry
 
-        for i in range(MQTT_VARIABLE_ROWS):
+        # Zeilenindizes kommen aus den tatsächlich übermittelten Formularfeldern, nicht aus einem
+        # festen Bereich -- die Custom-CAN-Variablen-Tabelle kann im Browser per "+ Zeile" beliebig
+        # viele zusätzliche Zeilen bekommen (kein serverseitiges Limit).
+        customvar_indices = sorted(
+            int(key[len("customvar_name_"):])
+            for key in request.form
+            if key.startswith("customvar_name_") and key[len("customvar_name_"):].isdigit()
+        )
+        for i in customvar_indices:
             name = request.form.get(f"customvar_name_{i}", "").strip()
             if not name:
                 continue
@@ -780,21 +790,20 @@ def mqtt_variables_page():
         vito_rows.append(row)
 
     custom_rows = []
-    for name, entry in mqtt_variables.items():
+    for name, entry in sorted(mqtt_variables.items()):
         if name in vito_vars:
             continue
         row = build_mqtt_variable_rows(entry)
         row["name"] = name
         custom_rows.append(row)
-    while len(custom_rows) < MQTT_VARIABLE_ROWS:
+    for _ in range(BLANK_CUSTOM_VARIABLE_ROWS):
         custom_rows.append({"name": "", "display_name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
-    custom_rows = custom_rows[:MQTT_VARIABLE_ROWS]
 
     return render_template(
         "mqtt_variables.html",
         vito_rows=vito_rows,
         custom_rows=custom_rows,
-        num_custom_rows=range(MQTT_VARIABLE_ROWS),
+        next_custom_index=len(custom_rows),
         message=message,
         message_ok=message_ok,
     )

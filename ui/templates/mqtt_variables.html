@@ -82,8 +82,9 @@
         <th>Min/Max/Step</th>
         <th>Optionen (bei Select)</th>
       </tr>
-      {% for i in num_custom_rows %}
-      {% set row = custom_rows[i] %}
+      <tbody id="customvar-tbody">
+      {% for row in custom_rows %}
+      {% set i = loop.index0 %}
       <tr class="canvar-row">
         <td><input type="text" name="customvar_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor"></td>
         <td><input type="text" name="customvar_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
@@ -107,8 +108,35 @@
         </td>
       </tr>
       {% endfor %}
+      </tbody>
     </table>
+    <button type="button" id="add-customvar-row">+ Zeile hinzufügen</button>
   </div>
+
+  <template id="customvar-row-template">
+    <tr class="canvar-row">
+      <td><input type="text" name="customvar_name___IDX__" placeholder="z.B. uvr_sollwert_kollektor"></td>
+      <td><input type="text" name="customvar_display___IDX__" placeholder="optional"></td>
+      <td>
+        <select name="customvar_component___IDX__" class="canvar-component">
+          <option value="number" selected>Number</option>
+          <option value="select">Select</option>
+          <option value="switch">Switch (An/Aus)</option>
+        </select>
+      </td>
+      <td class="canvar-number">
+        <input type="text" name="customvar_unit___IDX__" placeholder="°C">
+      </td>
+      <td class="canvar-number">
+        <input type="text" name="customvar_min___IDX__" placeholder="Min">
+        <input type="text" name="customvar_max___IDX__" placeholder="Max">
+        <input type="text" name="customvar_step___IDX__" placeholder="Step">
+      </td>
+      <td class="canvar-select" style="display:none">
+        <input type="text" name="customvar_options___IDX__" placeholder="AUTO, AN, AUS">
+      </td>
+    </tr>
+  </template>
 
   <div class="card">
     <button type="submit" onclick="return confirm('MQTT-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
@@ -153,8 +181,8 @@ document.querySelectorAll('.writable-toggle').forEach(function (toggle) {
   update();
 });
 
-document.querySelectorAll('.canvar-component').forEach(function (select) {
-  const row = select.closest('tr');
+function attachCanvarComponentHandler(row) {
+  const select = row.querySelector('.canvar-component');
   function update() {
     const isSelect = select.value === 'select';
     row.querySelectorAll('.canvar-number').forEach(el => el.style.display = isSelect ? 'none' : '');
@@ -162,6 +190,23 @@ document.querySelectorAll('.canvar-component').forEach(function (select) {
   }
   select.addEventListener('change', update);
   update();
+}
+
+document.querySelectorAll('#customvar-tbody .canvar-row').forEach(attachCanvarComponentHandler);
+
+// "+ Zeile hinzufügen": Custom-CAN-Variablen-Tabelle ist absichtlich unbegrenzt (kann je nach
+// CAN-Ausbaustufe weit über die anfangs gerenderten Zeilen hinauswachsen) -- klont die
+// <template>-Zeile mit einem noch nicht vergebenen Index statt eines festen Server-Limits.
+let nextCustomVarIndex = {{ next_custom_index }};
+document.getElementById('add-customvar-row').addEventListener('click', function () {
+  const template = document.getElementById('customvar-row-template');
+  const clone = template.content.cloneNode(true);
+  clone.querySelectorAll('[name]').forEach(function (el) {
+    el.name = el.name.replace('__IDX__', nextCustomVarIndex);
+  });
+  document.getElementById('customvar-tbody').appendChild(clone);
+  attachCanvarComponentHandler(document.getElementById('customvar-tbody').lastElementChild);
+  nextCustomVarIndex++;
 });
 </script>
 {% endblock %}

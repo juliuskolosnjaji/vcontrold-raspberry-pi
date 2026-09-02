@@ -187,12 +187,20 @@ class Orchestrator:
 
     def _sync_variable_state(self) -> None:
         """Löscht (leere retained Nachricht) heizung/<var> für jede Variable, die beim letzten
-        Start noch bekannt war, jetzt aber nicht mehr in vito.xml existiert."""
+        Start noch bekannt war, jetzt aber nicht mehr in vito.xml existiert. Entfernt außerdem
+        automatisch verwaiste Einträge aus config/mqtt_variables.json (siehe
+        mqtt_vars.prune_removed_vito_variables()) -- sonst würde ein aus vito.xml gelöschter
+        Name dort fälschlich als CAN-Custom-Variable weiterleben."""
         current_topics = {f"{self.topic_heizung}/{name}" for name in self.variables}
         stale = sync_retained_topics(self.client, VARIABLE_STATE_PATH, "variables", current_topics)
         if stale:
             stale_names = sorted(topic.rsplit("/", 1)[-1] for topic in stale)
             print(f"Retained Werte aufgeräumt: {len(stale)} verwaiste Variable(n) ({', '.join(stale_names)})")
+
+        removed = mqtt_vars.prune_removed_vito_variables(set(self.variables.keys()))
+        if removed:
+            self.mqtt_variables = mqtt_vars.load()
+            print(f"MQTT-Variablen aufgeräumt: {len(removed)} verwaiste Einträge entfernt ({', '.join(sorted(removed))})")
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")

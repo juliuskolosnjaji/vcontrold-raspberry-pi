@@ -4,6 +4,7 @@ config/can_mapping.json
 config/mqtt_variables.json
 config/.discovery_state.json
 config/.orchestrator_state.json
+config/.mqtt_variables_vito_state.json
 ui/ui.env
 __pycache__/
 *.pyc

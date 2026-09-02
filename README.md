@@ -227,7 +227,10 @@ automatisch zu einer reinen CAN-Variable statt einer Vcontrold-settable.
 **Über die Web-UI** (empfohlen): Auf der **MQTT-Variablen**-Seite unter "Custom CAN-Variablen"
 — Name, Anzeigename, Typ (Number/Select/Switch) und je nach Typ Einheit/Min/Max/Step oder Optionen
 eintragen, speichern. Den Namen zusätzlich als Kanal in einem Write-/Read-Slot auf der
-CAN-Einstellungen-Seite eintragen, damit tatsächlich etwas über CAN läuft.
+CAN-Einstellungen-Seite eintragen, damit tatsächlich etwas über CAN läuft. Die Tabelle hat kein
+festes Zeilenlimit -- "+ Zeile hinzufügen" ergänzt bei Bedarf beliebig viele weitere Zeilen (z.B.
+bei vielen CAN-Ein-/Ausgängen). Die Ausgang-Nummerierung selbst (1-16 pro Analog-/Digital-
+Kategorie) ist dagegen durch das TA-Protokoll fest vorgegeben, siehe Abschnitt 3.4/3.5.
 
 **Manuell**, falls gewünscht:
 
@@ -585,6 +588,15 @@ gebildet und die verwaisten Topics werden per leerer retained Nachricht gelösch
 entfernt die zugehörige Entity darauf automatisch, kein manuelles `mosquitto_pub`/Aufräumen nötig.
 Damit das greift, muss der jeweilige Dienst tatsächlich neu starten: Änderungen über die Web-UI
 (vito.xml, Variablen/MQTT-Konfiguration, CAN-Einstellungen) lösen das automatisch aus.
+
+**Aus vito.xml gelöschte Variablen werden auch aus `mqtt_variables.json` entfernt**, nicht nur
+die Discovery-Entity: `orchestrator.py` merkt sich bei jedem Start/Reconnect (in
+`config/.mqtt_variables_vito_state.json`, lokale Laufzeit-Datei), welche Namen zuletzt als
+vito.xml-Variable bekannt waren, und entfernt einen Eintrag automatisch aus
+`config/mqtt_variables.json`, sobald der zugehörige Name nicht mehr in `vito.xml` existiert
+(siehe `mqtt_variables.prune_removed_vito_variables()`). Ohne das würde ein gelöschter Eintrag
+sonst als (falsch klassifizierte) CAN-Custom-Variable weiterleben, weil "nicht in vito.xml" das
+einzige Unterscheidungskriterium dafür ist (siehe Abschnitt 2).
 
 **CAN-Empfangswerte (UVR → Pi):** Diese haben keine Entsprechung in `vito.xml` und werden deshalb
 separat von `can_node.py` discovered — jeder in `config/can_mapping.json` unter
