@@ -139,25 +139,48 @@
   </template>
 
   <div class="card wide-card">
-    <h2>MQTT-Mapping</h2>
-    <p>Leitet den Wert einer beliebigen MQTT-Variable zusätzlich als Set-Anfrage an eine andere
-       MQTT-Variable weiter -- unabhängig davon, ob Quelle oder Ziel aus vito.xml oder CAN
-       stammen (z.B. um einen von der UVR berechneten Sollwert an die Vitotronic durchzureichen,
-       oder umgekehrt einen Vcontrold-Wert an eine CAN-Variable). Beide Felder akzeptieren jeden
-       bekannten Variablennamen von oben, auch frei eingetippt.</p>
+    <h2>Set-Weiterleitung (empfangener Wert → Vitotronic-Parameter setzen)</h2>
+    <p><strong>Anwendungsfall:</strong> ein Wert, den du woanders bereits als MQTT-Variable hast
+       (typischerweise ein von der UVR per CAN empfangener Wert, z.B. ein dort berechneter
+       Raumsollwert), soll einen echten <strong>Set-Befehl in der Vitotronic</strong> auslösen --
+       nicht nur angezeigt werden. Beispiel: die UVR ermittelt einen neuen Raumsollwert und
+       sendet ihn per CAN an den Pi (siehe CAN-Einstellungen → "CAN-Analogausgänge empfangen",
+       dort als eigene Variable eintragen, z.B. <code>uvr_raumsollwert</code>). Hier trägst du
+       dann <code>uvr_raumsollwert</code> als Quelle ein, <code>TempRaumNorSoll</code> als Ziel --
+       der Orchestrator setzt den Wert dann in der Vitotronic und verifiziert ihn.</p>
+    <p><strong>Wichtig:</strong> Für die umgekehrte Richtung -- ein Vcontrold-/MQTT-Wert soll per
+       CAN an die UVR gesendet werden -- ist diese Sektion <strong>nicht</strong> zuständig, dafür
+       die 16-Slot-Tabelle "TA-Netzwerkausgänge senden" auf der
+       <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite: dort einfach den
+       Variablennamen eintragen, fertig -- er wird automatisch bei jeder Änderung gesendet, ohne
+       dass hier zusätzlich etwas konfiguriert werden muss. Deshalb akzeptiert das "Ziel"-Feld
+       hier ausschließlich Vitotronic-Parameter, die oben als "Schreibbar" aktiviert sind -- ein
+       CAN-Ziel würde hier ohnehin nie tatsächlich am CAN-Bus ankommen.</p>
     <table class="canvar-table">
-      <tr><th>Quelle</th><th></th><th>Ziel</th></tr>
+      <tr><th>Quelle (beliebige MQTT-Variable)</th><th></th><th>Ziel (Vitotronic-Parameter setzen)</th></tr>
       <tbody id="mapping-tbody">
       {% for row in mapping_rows %}
       {% set i = loop.index0 %}
       <tr class="canvar-row">
-        <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_vorlauftemperatur"></td>
+        <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_raumsollwert"></td>
         <td style="text-align:center;">→</td>
-        <td><input type="text" name="mapping_target_{{ i }}" value="{{ row.target }}" list="known-variable-names" placeholder="z.B. TempKsoll"></td>
+        <td>
+          <select name="mapping_target_{{ i }}">
+            <option value="" {% if not row.target %}selected{% endif %}>— keine —</option>
+            {% for k in settable_targets %}
+            <option value="{{ k }}" {% if row.target == k %}selected{% endif %}>{{ k }}</option>
+            {% endfor %}
+          </select>
+        </td>
       </tr>
       {% endfor %}
       </tbody>
     </table>
+    {% if not settable_targets %}
+    <p><em>Noch keine schreibbaren Vitotronic-Parameter registriert -- weiter oben bei einer
+       vito.xml-Variable mit Setter "Schreibbar" aktivieren, dann steht sie hier als Ziel zur
+       Auswahl.</em></p>
+    {% endif %}
     <button type="button" id="add-mapping-row">+ Zeile hinzufügen</button>
   </div>
 
@@ -169,9 +192,16 @@
 
   <template id="mapping-row-template">
     <tr class="canvar-row">
-      <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_vorlauftemperatur"></td>
+      <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_raumsollwert"></td>
       <td style="text-align:center;">→</td>
-      <td><input type="text" name="mapping_target___IDX__" list="known-variable-names" placeholder="z.B. TempKsoll"></td>
+      <td>
+        <select name="mapping_target___IDX__">
+          <option value="" selected>— keine —</option>
+          {% for k in settable_targets %}
+          <option value="{{ k }}">{{ k }}</option>
+          {% endfor %}
+        </select>
+      </td>
     </tr>
   </template>
 

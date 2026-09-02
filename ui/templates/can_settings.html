@@ -47,9 +47,9 @@
     <p>Liest die tatsächlichen "CAN-Analogausgänge" der UVR direkt (siehe README Abschnitt 3.4) --
        eine CAN-ID für alle 16 Ausgänge, per Sniffer ermitteln. Kanalname per Dropdown aus
        bestehenden Variablen wählen oder frei eintippen (legt bei Bedarf eine neue MQTT-Variable
-       an). Soll dieser Wert zusätzlich an eine andere MQTT-Variable weitergegeben werden (z.B. um
-       ihn an die Vitotronic durchzureichen), auf der <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite
-       unter "MQTT-Mapping" einrichten.</p>
+       an). Soll dieser Wert zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, auf der
+       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite unter
+       "Set-Weiterleitung" einrichten.</p>
     <div class="can-id-row">
       <label for="rx_ta_analog_can_id">CAN-ID (gemeinsam für alle Ausgänge)</label>
       <input type="text" id="rx_ta_analog_can_id" name="rx_ta_analog_outputs_can_id" value="{{ rx_ta_analog_can_id }}" placeholder="0x1ca">
@@ -110,6 +110,11 @@
        (z.B. Home Assistant direkt) auf <code>heizung/&lt;Name&gt;</code> published, sendet
        <code>can-node</code> diesen Wert, unabhängig von der Quelle. Analog-Kodierung ist gegen echte Hardware bestätigt, Digital
        noch nicht getestet.</p>
+    <p><strong>Diese Tabelle ist der einzige Weg, einen Wert per CAN an die UVR zu senden</strong> —
+       ein Name, der hier steht, wird automatisch bei jeder Änderung gesendet, ohne dass an
+       anderer Stelle noch etwas konfiguriert werden muss. Für die Gegenrichtung (ein von der UVR
+       empfangener Wert soll einen echten Set-Befehl in der Vitotronic auslösen) siehe
+       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a> → "Set-Weiterleitung".</p>
     <table class="canvar-table">
       <tr><th>Ausgang</th><th>Analog: heizung/…</th><th>Digital: heizung/…</th></tr>
       {% for i in range(total_slots) %}

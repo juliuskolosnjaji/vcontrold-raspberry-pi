@@ -74,20 +74,21 @@ bewusst so vereinfacht, weil Wertüberschreibungen zwischen den drei Quellen
   nach einem Neustart von `can_node.py` stehen die letzten bekannten Werte sofort wieder
   zur Verfügung, statt auf den nächsten Orchestrator-Zyklus warten zu müssen.
 - `heizung/cmd/<Variable>`: sowohl Home Assistant als auch `orchestrator.py` selbst (bei
-  einem MQTT-Mapping, siehe unten) publishen hierher. Da MQTT selbst nicht verrät, welcher
+  einer Set-Weiterleitung, siehe unten) publishen hierher. Da MQTT selbst nicht verrät, welcher
   Client eine Nachricht gesendet hat, wird in diesem Fall JSON (`{"value": ..., "source": "can"}`
   bzw. `{"..., "source": "mapping"}`) statt eines rohen Werts geschickt, damit der Orchestrator
   die Quelle im Log weiterhin unterscheiden kann (`Quelle: MQTT/HA`, `CAN/UVR` bzw.
-  `MQTT-Mapping`) -- die eigentliche Set-Verifikation läuft in allen Fällen identisch ab.
+  `Set-Weiterleitung`) -- die eigentliche Set-Verifikation läuft in allen Fällen identisch ab.
 
-**MQTT-Mapping** (`config/mqtt_mapping.json`, gepflegt auf der MQTT-Variablen-Seite): leitet den
-Wert einer beliebigen MQTT-Variable zusätzlich als Set-Anfrage an eine andere MQTT-Variable
-weiter -- unabhängig davon, ob Quelle oder Ziel aus vito.xml oder CAN stammen (z.B. um einen
-von der UVR berechneten Sollwert an die Vitotronic durchzureichen). `orchestrator.py` löst dabei
-automatisch auf, ob ein Name eine vito.xml-Variable (`heizung/<Name>`/`heizung/cmd/<Name>`) oder
-eine CAN-Variable (`uvr/<Name>`/`uvr/cmd/<Name>`) ist. Ersetzt die frühere, an die CAN-
-Einstellungen-Seite gekoppelte "Weiterleitung" (`forward_as_set`) durch einen eigenständigen,
-allgemeineren Mechanismus.
+**Set-Weiterleitung** (`config/mqtt_mapping.json`, Abschnitt "Set-Weiterleitung" auf der MQTT-
+Variablen-Seite): leitet den Wert einer beliebigen MQTT-Variable (egal ob aus vito.xml oder CAN)
+zusätzlich als Set-Anfrage an eine **schreibbare Vcontrold-Variable** weiter -- z.B. um einen von
+der UVR berechneten Sollwert tatsächlich in der Vitotronic zu setzen. Das Ziel-Dropdown zeigt
+bewusst nur Vcontrold-Variablen, die als "Schreibbar" aktiviert sind: für die Gegenrichtung
+(Vcontrold-/MQTT-Wert → CAN) ist bereits die 16-Slot-Tabelle "TA-Netzwerkausgänge senden"
+(Abschnitt 3.3) der vollständige, alleinige Weg -- ein zusätzliches Mapping dorthin würde nie
+tatsächlich am CAN-Bus ankommen, da `can_node.py` nur sendet, was in dieser Tabelle steht.
+Ersetzt die frühere, an die CAN-Einstellungen-Seite gekoppelte "Weiterleitung" (`forward_as_set`).
 
 ## 1. vcontrold installieren
 
@@ -134,7 +135,7 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 `scripts/orchestrator.py` läuft dauerhaft als systemd-Dienst und übernimmt drei Aufgaben:
 
 1. **Mehrere Read-Zyklen mit unterschiedlichen Intervallen** aus `config/read_cycles.json` — z.B. Temperaturen alle 30s, Zählerstände alle 5 Minuten. Jeder gelesene Wert wird auf `heizung/<Variable>` published (retained; für Home Assistant UND `can_node.py`, das denselben Topic für die CAN-Weiterleitung an die UVR abonniert, siehe "MQTT-Architektur" oben). Alle Getter eines Zyklus werden dabei in **einer** `vclient`-Verbindung abgefragt (`-c get1,get2,...` mit `-t`-Template, `$R1..$Rn`), statt pro Variable eine eigene Verbindung zu öffnen — schneller bei vielen Variablen pro Zyklus, hat aber den Kompromiss, dass ein Verbindungsfehler alle Variablen dieses Zyklus-Durchlaufs betrifft, nicht nur eine einzelne.
-2. **On-demand Set-Befehle**, sowohl von Home Assistant als auch (per MQTT-Mapping, siehe "MQTT-Architektur" oben) von einer anderen MQTT-Variable -- beide über denselben Topic `heizung/cmd/<Variable>`, mit Quellenkennung im JSON-Payload.
+2. **On-demand Set-Befehle**, sowohl von Home Assistant als auch (per Set-Weiterleitung, siehe "MQTT-Architektur" oben) von einer anderen MQTT-Variable -- beide über denselben Topic `heizung/cmd/<Variable>`, mit Quellenkennung im JSON-Payload.
 3. **Verifikation:** nach jedem Set-Befehl wird automatisch der zugehörige Get-Befehl nachgeschickt, und erst der so bestätigte Ist-Wert wird published — nicht der ungeprüfte Set-Rückgabewert.
 
 **Kanonische Namen statt eigener MQTT-Bezeichner:** Es gibt keine separate Umbenennungsebene mehr —

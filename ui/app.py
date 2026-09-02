@@ -367,8 +367,8 @@ TA_RX_OUTPUT_SLOTS = 16  # rx_ta_analog_outputs/rx_ta_digital_outputs: Ausgang 1
 def parse_ta_rx_output_rows(key: str) -> dict:
     """Baut das 'outputs'-Dict für rx_ta_analog_outputs/rx_ta_digital_outputs aus den
     Formularfeldern '{key}_slot_topic_<i>' (i=0..15, Ausgang i+1). Soll ein empfangener Wert
-    zusätzlich an eine andere MQTT-Variable weitergegeben werden, siehe die eigenständige
-    MQTT-Mapping-Konfiguration auf der MQTT-Variablen-Seite (config/mqtt_mapping.json)."""
+    zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, siehe die eigenständige
+    Set-Weiterleitung auf der MQTT-Variablen-Seite (config/mqtt_mapping.json)."""
     outputs = {}
     for i in range(TA_RX_OUTPUT_SLOTS):
         topic = request.form.get(f"{key}_slot_topic_{i}", "").strip()
@@ -752,7 +752,7 @@ def vcontrold_page():
 BLANK_CUSTOM_VARIABLE_ROWS = 3  # zusätzliche leere Zeilen für neue Custom-CAN-Variablen; "+ Zeile"
 # im Browser fügt bei Bedarf beliebig mehr hinzu (kein fixes Limit, da die Anzahl je nach
 # CAN-Ausbaustufe stark variieren kann)
-BLANK_MAPPING_ROWS = 3  # zusätzliche leere Zeilen für neue MQTT-Mappings, ebenfalls per "+ Zeile" erweiterbar
+BLANK_MAPPING_ROWS = 3  # zusätzliche leere Zeilen für neue Set-Weiterleitungen, ebenfalls per "+ Zeile" erweiterbar
 
 
 def build_mqtt_variable_rows(entry: dict) -> dict:
@@ -820,6 +820,15 @@ def mqtt_variables_page():
             entry["discovery"] = parse_discovery_fields("customvar", i, f"'{name}'", errors)
             new_variables[name] = entry
 
+        # Ziel-Auswahl bewusst auf tatsächlich schreibbare Vcontrold-Variablen beschränkt (siehe
+        # available_set_keys unten): ein Mapping-Ziel, das eine CAN-Variable ist, würde nie
+        # tatsächlich am CAN-Bus ankommen (can_node.py sendet nur, was zusätzlich in der
+        # "TA-Netzwerkausgänge senden"-Tabelle steht) -- so eine wirkungslose, aber gültig
+        # aussehende Konfiguration soll gar nicht erst eingebbar sein. Verwendet new_variables
+        # (den gerade abgeschickten Stand), damit eine im selben Speichern-Klick aktivierte
+        # Set-Variable sofort als gültiges Ziel zählt.
+        settable_targets = {k for k, v in new_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)}
+
         mapping_indices = sorted(
             int(key[len("mapping_source_"):])
             for key in request.form
@@ -836,6 +845,9 @@ def mqtt_variables_page():
                 continue
             if source == target:
                 errors.append(f"Mapping-Zeile {i + 1}: Quelle und Ziel sind identisch ('{source}')")
+                continue
+            if target not in settable_targets:
+                errors.append(f"Mapping-Zeile {i + 1}: '{target}' ist keine schreibbare Vcontrold-Variable (oben zuerst als 'Schreibbar' aktivieren)")
                 continue
             new_mappings.append({"source": source, "target": target})
 
@@ -885,10 +897,19 @@ def mqtt_variables_page():
     for _ in range(BLANK_CUSTOM_VARIABLE_ROWS):
         custom_rows.append({"name": "", "display_name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
 
-    # Vorschlagsliste fürs Mapping: alle bekannten MQTT-Variablennamen (vito.xml + konfigurierte
-    # MQTT-Variablen). Freies Eintippen bleibt möglich, z.B. für einen reinen CAN-Empfangskanal,
-    # der (noch) keinen eigenen mqtt_variables.json-Eintrag hat.
+    # Vorschlagsliste für "Quelle" (Set-Weiterleitung): alle bekannten MQTT-Variablennamen
+    # (vito.xml + konfigurierte MQTT-Variablen). Freies Eintippen bleibt möglich, z.B. für einen
+    # reinen CAN-Empfangskanal, der (noch) keinen eigenen mqtt_variables.json-Eintrag hat -- als
+    # Quelle ist jede Variable sinnvoll, die einen Wert liefert.
     known_variable_names = sorted(set(vito_vars.keys()) | set(mqtt_variables.keys()))
+
+    # "Ziel" ist dagegen bewusst auf tatsächlich schreibbare Vcontrold-Variablen beschränkt (siehe
+    # POST-Handler oben) -- ein CAN-Ziel würde hier nie tatsächlich am CAN-Bus ankommen, siehe
+    # README "Set-Weiterleitung"/Abschnitt 3. Dieselbe Liste wie zuvor "available_set_keys" auf der
+    # CAN-Einstellungen-Seite (Weiterleitungsziel dort, jetzt hier).
+    settable_targets = sorted(
+        k for k, v in mqtt_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)
+    )
 
     mapping_rows = [dict(m) for m in mqtt_mapping.load()]
     for _ in range(BLANK_MAPPING_ROWS):
@@ -902,6 +923,7 @@ def mqtt_variables_page():
         mapping_rows=mapping_rows,
         next_mapping_index=len(mapping_rows),
         known_variable_names=known_variable_names,
+        settable_targets=settable_targets,
         message=message,
         message_ok=message_ok,
     )

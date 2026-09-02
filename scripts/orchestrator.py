@@ -16,9 +16,10 @@ mqtt_command_listener.py durch einen dauerhaft laufenden systemd-Dienst, der:
   - nach jedem Set-Befehl den zugehörigen Get-Befehl nachschiebt, um die
     tatsächlich übernommene Vitotronic-Antwort zu verifizieren, statt dem
     Set blind zu vertrauen,
-  - config/mqtt_mapping.json: leitet den Wert einer beliebigen MQTT-Variable zusätzlich als
-    Set-Anfrage an eine andere MQTT-Variable weiter (siehe mqtt_mapping.py/_build_mapping_routes()),
-    unabhängig davon, ob Quelle/Ziel aus vito.xml oder CAN stammen.
+  - config/mqtt_mapping.json ("Set-Weiterleitung"): leitet den Wert einer beliebigen MQTT-
+    Variable (egal ob aus vito.xml oder CAN) zusätzlich als Set-Anfrage an eine schreibbare
+    Vcontrold-Variable weiter (siehe mqtt_mapping.py/_build_mapping_routes()) -- z.B. wenn ein
+    von der UVR berechneter Sollwert tatsächlich in der Vitotronic gesetzt werden soll.
 
 Warum ein Daemon statt eines echten Cronjobs: Cronjobs können zwischen zwei
 Läufen keine offene MQTT-Verbindung halten und daher nicht "on demand" auf
@@ -240,7 +241,7 @@ class Orchestrator:
             client.message_callback_add(source_topic, self._on_mapping_source_message)
         if self.mapping_routes:
             target_count = sum(len(v) for v in self.mapping_routes.values())
-            print(f"MQTT-Mapping aktiv: {len(self.mapping_routes)} Quell-Topic(s) -> {target_count} Ziel(e)")
+            print(f"Set-Weiterleitung aktiv: {len(self.mapping_routes)} Quell-Topic(s) -> {target_count} Ziel(e)")
 
         if self.discovery_enabled:
             ha_discovery.publish_discovery(
@@ -269,7 +270,7 @@ class Orchestrator:
         for target_topic, wrap_json, source, target in self.mapping_routes.get(msg.topic, []):
             out_payload = json.dumps({"value": payload, "source": "mapping"}) if wrap_json else payload
             client.publish(target_topic, out_payload)
-            print(f"MQTT-Mapping: {source}={payload} -> {target}")
+            print(f"Set-Weiterleitung: {source}={payload} -> {target}")
 
     @staticmethod
     def _parse_cmd_payload(raw: str) -> tuple[str, str]:
@@ -285,7 +286,7 @@ class Orchestrator:
             return raw, "MQTT/HA"
         if isinstance(data, dict) and "value" in data:
             source_tag = data.get("source")
-            source = "CAN/UVR" if source_tag == "can" else "MQTT-Mapping" if source_tag == "mapping" else "MQTT/HA"
+            source = "CAN/UVR" if source_tag == "can" else "Set-Weiterleitung" if source_tag == "mapping" else "MQTT/HA"
             return str(data["value"]), source
         return raw, "MQTT/HA"
 
