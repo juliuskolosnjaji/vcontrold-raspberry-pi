@@ -390,6 +390,31 @@ def build_ta_rx_output_rows(config: dict) -> list:
     return rows
 
 
+def parse_discovery_fields(prefix: str, suffix, error_label: str, errors: list) -> dict:
+    """Baut ein 'discovery'-Dict (component/unit/min/max/step/options) aus Formularfeldern
+    '{prefix}_component_{suffix}'/'_unit_'/'_min_'/'_max_'/'_step_'/'_options_' -- gemeinsame
+    Logik für can_settings() (custom CAN-Variablen, suffix=Zeilenindex) und variables_page()
+    (settable vito.xml-Variablen, suffix=Variablenname). Ungültige Zahlenwerte werden mit
+    error_label als Präfix an `errors` angehängt."""
+    component = request.form.get(f"{prefix}_component_{suffix}", "number")
+    discovery = {"component": component}
+    if component == "number":
+        unit = request.form.get(f"{prefix}_unit_{suffix}", "").strip()
+        if unit:
+            discovery["unit"] = unit
+        for field in ("min", "max", "step"):
+            raw = request.form.get(f"{prefix}_{field}_{suffix}", "").strip()
+            if raw:
+                try:
+                    discovery[field] = float(raw) if "." in raw else int(raw)
+                except ValueError:
+                    errors.append(f"{error_label}: ungültiger Wert für {field}")
+    elif component == "select":
+        options_raw = request.form.get(f"{prefix}_options_{suffix}", "").strip()
+        discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
+    return discovery
+
+
 def load_can_variables() -> dict:
     if not CAN_VARIABLES_PATH.exists():
         return {}
@@ -445,22 +470,7 @@ def can_settings():
             name = request.form.get(f"canvar_name_{i}", "").strip()
             if not name:
                 continue
-            component = request.form.get(f"canvar_component_{i}", "number")
-            discovery = {"component": component}
-            if component == "number":
-                unit = request.form.get(f"canvar_unit_{i}", "").strip()
-                if unit:
-                    discovery["unit"] = unit
-                for field in ("min", "max", "step"):
-                    raw = request.form.get(f"canvar_{field}_{i}", "").strip()
-                    if raw:
-                        try:
-                            discovery[field] = float(raw) if "." in raw else int(raw)
-                        except ValueError:
-                            errors.append(f"Custom CAN-Variable '{name}': ungültiger Wert für {field}")
-            elif component == "select":
-                options_raw = request.form.get(f"canvar_options_{i}", "").strip()
-                discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
+            discovery = parse_discovery_fields("canvar", i, f"Custom CAN-Variable '{name}'", errors)
             new_can_variables[name] = {"discovery": discovery}
 
         if errors:
@@ -667,25 +677,8 @@ def variables_page():
             # Automatisch settable, sobald vito.xml einen Setter hat -- keine separate
             # Freischalt-Checkbox mehr (frühere Whitelist-Logik bewusst entfernt).
 
-            entry = {}
-            component = request.form.get(f"var_component_{var_name}", "number")
-            discovery = {"component": component}
-            if component == "number":
-                unit = request.form.get(f"var_unit_{var_name}", "").strip()
-                if unit:
-                    discovery["unit"] = unit
-                for field in ("min", "max", "step"):
-                    raw = request.form.get(f"var_{field}_{var_name}", "").strip()
-                    if raw:
-                        try:
-                            discovery[field] = float(raw) if "." in raw else int(raw)
-                        except ValueError:
-                            errors.append(f"'{var_name}': ungültiger Wert für {field}")
-            elif component == "select":
-                options_raw = request.form.get(f"var_options_{var_name}", "").strip()
-                discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
-            entry["discovery"] = discovery
-            new_command_map[var_name] = entry
+            discovery = parse_discovery_fields("var", var_name, f"'{var_name}'", errors)
+            new_command_map[var_name] = {"discovery": discovery}
 
         if errors:
             message, message_ok = " / ".join(errors), False

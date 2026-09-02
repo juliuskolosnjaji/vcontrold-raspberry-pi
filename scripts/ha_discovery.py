@@ -16,6 +16,7 @@ import json
 import pathlib
 
 import vito_variables
+from mqtt_common import sync_retained_topics
 
 # Merkt sich pro Namespace ("vcontrold"/"can"), welche MQTT-Topics beim letzten Lauf published
 # wurden -- damit publish_discovery()/publish_can_discovery() bei jedem Start automatisch
@@ -100,30 +101,14 @@ def _unique_id(key: str, id_prefix: str = "vcontrold") -> str:
     return f"{id_prefix}_{key}"
 
 
-def _load_discovery_state() -> dict:
-    if _STATE_PATH.exists():
-        try:
-            return json.loads(_STATE_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {}
-
-
 def _sync_discovery_state(client, namespace: str, published_topics: set) -> None:
     """Löscht (leere retained Nachricht) alle Topics, die beim letzten Lauf unter diesem
     Namespace published wurden, jetzt aber nicht mehr in published_topics stehen -- z.B. weil
     eine Variable aus vito.xml entfernt oder aus command_map.json/can_mapping.json genommen
     wurde. Läuft automatisch bei jedem Dienst-Start, kein manueller Aufräumschritt nötig."""
-    state = _load_discovery_state()
-    previous = set(state.get(namespace, []))
-    stale = previous - published_topics
-    for topic in stale:
-        client.publish(topic, payload=None, retain=True)
+    stale = sync_retained_topics(client, _STATE_PATH, namespace, published_topics)
     if stale:
         print(f"Discovery aufgeräumt ({namespace}): {len(stale)} verwaiste Topic(s) gelöscht")
-    state[namespace] = sorted(published_topics)
-    _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _STATE_PATH.write_text(json.dumps(state, indent=2))
 
 
 def build_sensor_config(key: str, state_topic: str, device: dict = None, id_prefix: str = "vcontrold") -> dict:

@@ -1,28 +1,18 @@
 #!/usr/bin/env python3
 """
-Eigenständiges CLI-Testwerkzeug für CANopen/SDO-Zugriff auf UVR1611/UVR16x2.
+Eigenständiges CLI-Testwerkzeug für den bestätigten SDO-Datensatz-Zugriff auf die UVR
+(Objekt 0x4FF4:04, siehe ta_canopen.py-Modul-Docstring und README Abschnitt 3.3).
 
-Zweck: gegen echte Hardware verifizieren, ob Objektverzeichnis-Indizes und Verbindungsweg
-für dein konkretes Gerät funktionieren, BEVOR can_node.py in Produktivbetrieb darauf
-umgestellt wird (siehe README Abschnitt 3.3). Kein systemd-Dienst, manuell ausführen.
-
-Zwei Verbindungswege:
-  --direct (Standard): normale CANopen-SDO-COB-IDs (0x600+NodeID / 0x580+NodeID),
-    kein Verbindungsaufbau -- versuchen, falls per candump bereits Traffic auf genau
-    diesen COB-IDs zu sehen war (deutet auf direkte Standard-Unterstützung hin).
-  --handshake: TA-spezifischer Verbindungsaufbau aus ta_canopen.py (temporäre COB-ID
-    über 0x400|eigene_node_id anfordern) -- falls --direct nicht antwortet.
+Zweck: gegen echte Hardware verifizieren, dass der Datensatz lesbar ist, BEVOR can_node.py
+in Produktivbetrieb darauf umgestellt wird. Kein systemd-Dienst, manuell ausführen.
 
 Beispiel (bestätigter Weg, siehe README 3.3):
   sudo ip link set can1 up type can bitrate 50000
-  venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65
+  venv/bin/python scripts/canopen_test.py --uvr-node-id 65
 
 Mit --heartbeat meldet sich der Pi zusätzlich per CANopen-Bootup+Heartbeat als eigener
 Knoten an (z.B. damit er im TA-CMI unter einer bestimmten Node-Nummer auftaucht):
-  venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 65 --own-node-id 60 --heartbeat
-
-Beispiel (unverifizierte Referenzindizes, vermutlich falsch für dieses Gerät):
-  venv/bin/python scripts/canopen_test.py --device uvr16x2 --uvr-node-id 65
+  venv/bin/python scripts/canopen_test.py --uvr-node-id 65 --own-node-id 60 --heartbeat
 """
 import argparse
 import sys
@@ -32,32 +22,6 @@ import can
 import canopen
 
 import ta_canopen as ta
-
-
-def poll_uvr16x2(node: canopen.RemoteNode, count: int, delay: float) -> None:
-    for i in range(count):
-        print(f"--- Durchlauf {i + 1}/{count} ---")
-        for ausgang in range(1, 17):
-            try:
-                data = node.sdo.upload(ta.UVR16X2_OBJ_AUSGANG_WERT, ausgang - 1)
-                value, einheit = ta.decode_uvr16x2_value(data)
-                print(f"  Ausgang {ausgang:2d}: {value:8.1f} {einheit}")
-            except Exception as exc:
-                print(f"  Ausgang {ausgang:2d}: Fehler ({exc})", file=sys.stderr)
-        time.sleep(delay)
-
-
-def poll_uvr1611(node: canopen.RemoteNode, count: int, delay: float) -> None:
-    for i in range(count):
-        print(f"--- Durchlauf {i + 1}/{count} ---")
-        for subindex in range(1, 17):
-            try:
-                data = node.sdo.upload(ta.UVR1611_OBJ_EINGAENGE_1_16_BASE, subindex)
-                value, einheit = ta.decode_uvr1611_value(data)
-                print(f"  E{subindex:2d}: {value:8.1f} {einheit}")
-            except Exception as exc:
-                print(f"  E{subindex:2d}: Fehler ({exc})", file=sys.stderr)
-        time.sleep(delay)
 
 
 def poll_record(node: canopen.RemoteNode, count: int, delay: float) -> None:
@@ -78,17 +42,10 @@ def poll_record(node: canopen.RemoteNode, count: int, delay: float) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
-    parser.add_argument(
-        "--read-record",
-        action="store_true",
-        help="Bestätigter Weg (siehe README 3.3): kompletten Datensatz (Objekt 0x4FF4:04) lesen statt --device",
-    )
-    parser.add_argument("--device", choices=["uvr16x2", "uvr1611"], help="Nur mit den unverifizierten Referenzindizes, siehe ta_canopen.py")
     parser.add_argument("--own-node-id", type=int, default=63, help="eigene Knoten-Nummer (Standard: 63)")
     parser.add_argument("--uvr-node-id", type=int, required=True, help="Knoten-Nummer der UVR (Handbuch/Menü prüfen)")
-    parser.add_argument("--handshake", action="store_true", help="TA-Verbindungsaufbau statt Standard-SDO-COB-IDs")
     parser.add_argument(
         "--heartbeat",
         action="store_true",
@@ -98,9 +55,6 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=3, help="Anzahl Poll-Durchläufe (Standard: 3)")
     parser.add_argument("--delay", type=float, default=2.0, help="Sekunden zwischen Durchläufen (Standard: 2.0)")
     args = parser.parse_args()
-
-    if not args.read_record and not args.device:
-        parser.error("--read-record oder --device angeben")
 
     bus = can.interface.Bus(channel=args.interface, interface="socketcan")
     network = canopen.Network()
@@ -112,40 +66,17 @@ def main() -> None:
         own_node = ta.create_own_node(network, args.own_node_id)
         print(f"Als eigener Knoten angemeldet (Node-ID {args.own_node_id}, Heartbeat + SDO-Server für Pflichtobjekte)")
 
-    conn = None
-    if args.handshake:
-        conn = ta.TAConnection(network, args.own_node_id)
-        print(f"TA-Verbindungsaufbau zu Knoten {args.uvr_node_id} (eigene Node-ID {args.own_node_id}) ...")
-        try:
-            node = conn.connect(args.uvr_node_id)
-        except ta.TAConnectionError as exc:
-            print(f"Verbindungsaufbau fehlgeschlagen: {exc}", file=sys.stderr)
-            print(
-                f"Prüfen: {args.interface} up + richtige Bitrate (50000)? uvr-node-id korrekt? Kabel/Termination?",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        print(f"Verbunden, temporäre COB-ID: 0x{node.id:x}")
-    else:
-        print(f"Direkter Zugriff auf Standard-SDO-COB-IDs für Knoten {args.uvr_node_id} "
-              f"(0x{0x600 + args.uvr_node_id:x}/0x{0x580 + args.uvr_node_id:x}) ...")
-        node = network.add_node(args.uvr_node_id, ta.EDS_PATH)
+    print(f"Direkter Zugriff auf Standard-SDO-COB-IDs für Knoten {args.uvr_node_id} "
+          f"(0x{0x600 + args.uvr_node_id:x}/0x{0x580 + args.uvr_node_id:x}) ...")
+    node = network.add_node(args.uvr_node_id, ta.EDS_PATH)
 
     try:
-        if args.read_record:
-            poll_record(node, args.count, args.delay)
-        elif args.device == "uvr16x2":
-            poll_uvr16x2(node, args.count, args.delay)
-        else:
-            poll_uvr1611(node, args.count, args.delay)
+        poll_record(node, args.count, args.delay)
     finally:
         if own_node is not None:
             own_node.nmt.stop_heartbeat()
             network.pop(own_node.id)
-        if conn is not None:
-            conn.disconnect(args.uvr_node_id, node)
-        else:
-            network.pop(node.id)
+        network.pop(node.id)
         network.notifier.stop()
         bus.shutdown()
 

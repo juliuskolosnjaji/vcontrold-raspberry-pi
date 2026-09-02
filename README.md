@@ -267,16 +267,20 @@ Format wie in Abschnitt 3.1 angenommen. Zwischenzeitlich **gegen die echte Hardw
   Die **echte, im CMI angezeigte Knotennummer der UVR ist 10** — direkt getestet, liefert exakt
   dieselben Werte, ganz ohne Umweg über die alte CoE-Verbindung.
 - Kein TA-Verbindungsaufbau nötig: das Gerät antwortet direkt auf die Standard-COB-IDs
-  (`0x600+NodeID`/`0x580+NodeID`, hier `0x60A`/`0x58A` für Node 10), `canopen_test.py --direct`
-  (Standard) funktioniert ohne Handshake.
+  (`0x600+NodeID`/`0x580+NodeID`, hier `0x60A`/`0x58A` für Node 10), `canopen_test.py`
+  funktioniert ohne Handshake (der TA-spezifische Verbindungsaufbau-Code ist daher inzwischen
+  aus dem Projekt entfernt, siehe "Toter Code" weiter unten).
 - Die aus `staircaseblog/uvr16x2logging` übernommenen Objektindizes (`0x8272` etc., UVR16x2-Eingang)
   existieren auf diesem Gerät **nicht** (`Object does not exist`, 0x06020000) — vermutlich andere
   Firmware-/Geräte-Variante. **Update:** per `candump` (während CMI eine "CAN-Analogausgang"-Seite
   lud) den *richtigen* Objektindex für dieses Gerät gefunden: **`0x2050`**, Subindex = Ausgangsnummer
-  minus 1. Die Dekodierformel aus dem Referenzprojekt (`decode_uvr16x2_value()`) war die ganze Zeit
-  korrekt — nur die Objektbasis war falsch. Bestätigt gegen 3 Werte, die exakt mit dem
-  Datensatz-Decode (`decode_datensatz()`, Objekt `0x4FF4:04`) übereinstimmen. Anders als
-  `0x4FF4` läuft dieser Zugriff über eine **segmentierte** (nicht Block-)SDO-Antwort.
+  minus 1. Die Dekodierformel aus dem Referenzprojekt war die ganze Zeit korrekt — nur die
+  Objektbasis war falsch. Bestätigt gegen 3 Werte, die exakt mit dem Datensatz-Decode
+  (`decode_datensatz()`, Objekt `0x4FF4:04`) übereinstimmen. Anders als `0x4FF4` läuft dieser
+  Zugriff über eine **segmentierte** (nicht Block-)SDO-Antwort. **Für die Produktivnutzung
+  inzwischen ohne Bedeutung:** Abschnitt 3.4 unten (direktes CAN-Frame-Mitlesen der
+  CAN-Analogausgänge) ist der tatsächlich genutzte Weg; der 0x2050-Zugriff und seine
+  Dekodierfunktion wurden daher als unbenutzt aus dem Code entfernt.
 - Stattdessen liest ein bereits vorhandener zweiter Master (vermutlich CMI) laufend **Objekt
   `0x4FF4:04`** per SDO-Block-Transfer — ein **98-Byte-Datensatz**. Mit `scripts/sdo_sniffer.py`
   passiv mitgeschnitten und gegen einen am UVR-Display abgelesenen Wert verifiziert:
@@ -335,7 +339,7 @@ Testen:
 
 ```bash
 sudo ip link set can1 up type can bitrate 50000
-venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 10
+venv/bin/python scripts/canopen_test.py --uvr-node-id 10
 ```
 
 Gibt bei Erfolg Datum/Uhrzeit + alle 21 Slots aus. Implementiert in `scripts/ta_canopen.py`
@@ -357,7 +361,7 @@ doch mal unzuverlässig werden.
 ohne die ein Master zwar den Heartbeat sieht, aber auf eigene Anfragen keine Antwort bekommt:
 
 ```bash
-venv/bin/python scripts/canopen_test.py --read-record --uvr-node-id 10 --own-node-id 60 --heartbeat
+venv/bin/python scripts/canopen_test.py --uvr-node-id 10 --own-node-id 60 --heartbeat
 ```
 
 **Schreib-Pfad (Pi → UVR, Netzwerkeingang): bestätigt funktionsfähig.** Auf der UVR als
@@ -407,7 +411,7 @@ integriert das oben beschriebene, bestätigte Datensatz-Auslesen (`0x4FF4:04`) d
 ```
 
 `slots` bildet Slot-Nummer (1-21, siehe Byte-Layout oben) auf einen Kanalnamen ab. `can_node.py`
-liest den Datensatz nicht aktiv per eigener SDO-Anfrage (wie `canopen_test.py --read-record`),
+liest den Datensatz nicht aktiv per eigener SDO-Anfrage (wie `canopen_test.py`),
 sondern setzt die Block-Transfer-Segmente direkt aus dem ohnehin laufenden CAN-Empfang zusammen,
 sobald irgendein anderer Master (z.B. das CMI) den Datensatz sowieso abfragt -- und published
 jeden gemappten Slot unter `uvr/<name>` (retained), inklusive automatischer Home-Assistant-

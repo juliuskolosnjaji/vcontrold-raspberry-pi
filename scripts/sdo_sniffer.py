@@ -22,6 +22,8 @@ import sys
 
 import can
 
+from ta_canopen import BlockTransferTracker
+
 SDO_TX_BASE = 0x580  # Server -> Client (Antwort)
 SDO_RX_BASE = 0x600  # Client -> Server (Anfrage)
 
@@ -77,41 +79,6 @@ def format_candidates(value_bytes: bytes) -> str:
     return " | ".join(candidates)
 
 
-class BlockTransferTracker:
-    """Setzt CiA-301-Block-Upload-Segmente (Server -> Client) zu einem kompletten
-    Datensatz zusammen. Ein Objekt pro beobachtetem Node -- mehrere Transfers
-    nacheinander auf demselben Node werden nacheinander verarbeitet."""
-
-    def __init__(self):
-        self.index = None
-        self.subindex = None
-        self.declared_size = None
-        self.segments: dict[int, bytes] = {}
-
-    def on_initiate_response(self, data: bytes) -> None:
-        self.index = data[1] | (data[2] << 8)
-        self.subindex = data[3]
-        (self.declared_size,) = struct.unpack("<I", data[4:8])
-        self.segments = {}
-
-    def on_segment(self, data: bytes) -> bytes | None:
-        """Nimmt ein Segment entgegen, gibt den kompletten Datensatz zurück, sobald
-        das letzte Segment (Bit 0x80 gesetzt) angekommen ist, sonst None."""
-        seq_byte = data[0]
-        is_last = bool(seq_byte & 0x80)
-        seq = seq_byte & 0x7F
-        self.segments[seq] = data[1:8]
-        if not is_last:
-            return None
-        payload = b"".join(self.segments[s] for s in sorted(self.segments))
-        if self.declared_size is not None:
-            payload = payload[: self.declared_size]
-        self.segments = {}
-        self.declared_size = None  # Transfer abgeschlossen, sonst würden spätere normale
-        # Expedited-Antworten (cmd-Byte zufällig in 0x01-0x7F) als Segmente fehlinterpretiert.
-        return payload
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", default="can1", help="CAN-Interface (Standard: can1)")
@@ -138,21 +105,22 @@ def main() -> None:
             tracker = trackers.setdefault(node_id, BlockTransferTracker())
 
             if from_server and cmd == CMD_BLOCK_INITIATE_RESPONSE:
-                tracker.on_initiate_response(data)
+                tracker.start(data)
                 print(
                     f"Node {node_id:3d} <- Block-Upload-Start: Objekt 0x{tracker.index:04X}:{tracker.subindex:02X} "
                     f"({tracker.declared_size} Byte angekündigt)"
                 )
                 continue
 
-            if from_server and tracker.declared_size is not None and cmd is not None and 0x01 <= (cmd & 0x7F) <= 0x7F and cmd not in (
+            if from_server and tracker.active and cmd is not None and 0x01 <= (cmd & 0x7F) <= 0x7F and cmd not in (
                 CMD_BLOCK_END_RESPONSE,
             ):
-                payload = tracker.on_segment(data)
+                index, subindex = tracker.index, tracker.subindex
+                payload = tracker.add_segment(data)
                 if payload is None:
                     continue
                 print(
-                    f"Node {node_id:3d} <- Block-Upload komplett: Objekt 0x{tracker.index:04X}:{tracker.subindex:02X} "
+                    f"Node {node_id:3d} <- Block-Upload komplett: Objekt 0x{index:04X}:{subindex:02X} "
                     f"({len(payload)} Byte)\n  raw={payload.hex()}"
                 )
                 if payload.endswith(b"\r\n"):

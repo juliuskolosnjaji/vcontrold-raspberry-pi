@@ -2,46 +2,36 @@
 """
 Sendet einen TA-"Netzwerkausgang" (analog) an die UVR (siehe README Abschnitt 3.1/3.3).
 
-COB-ID-Schema laut Community-Guide (community.home-assistant.io, "UVR16x2 via
-CANable/candlelight, no C.M.I., full guide"), extrahiert aus TA-Dokumentation:
-  0x180+Node: Digital-Ausgänge 1-16
-  0x200+Node: Analog-Ausgänge 1-4
-  0x280+Node: Analog-Ausgänge 5-8
-  0x300+Node: Analog-Ausgänge 9-12
-  0x380+Node: Analog-Ausgänge 13-16
-Je 4x signed int16 Little-Endian pro 8-Byte-Frame, /10 skaliert. Das ist vermutlich
-der Grund, warum der vorherige Test mit 0x180 als Analog-Basis nichts bewirkt hat --
-0x180 ist laut dieser Quelle nur für Digital-Ausgänge.
-
 BESTÄTIGT gegen echte Hardware: Wert kommt korrekt am konfigurierten UVR-CAN-Analogeingang an.
 Voraussetzung dort: Feld "Messgröße" auf einen konkreten Typ (z.B. "Temperatur") stellen, sonst
 zeigt die UVR den rohen Ganzzahlwert unskaliert an ("Automatisch" reicht nicht).
+
+Nutzt dieselbe Kodierung wie can_node.py in Produktivbetrieb (ta_canopen.encode_analog_outputs/
+ANALOG_OUTPUT_COB_ID_BASES), damit dieses Testskript nie von der echten Sendelogik abweicht.
 
 Kein systemd-Dienst, manuell ausführen:
   venv/bin/python scripts/send_network_output_test.py --own-node-id 60 --output 1 --value 12.3
 """
 import argparse
-import struct
 import sys
 import time
 
 import can
 
-ANALOG_COB_ID_BASE = (0x200, 0x280, 0x300, 0x380)  # Ausgänge 1-4, 5-8, 9-12, 13-16
+import ta_canopen as ta
 
 
-def build_frame(output: int, value: float, existing: list[float]) -> tuple[int, bytes]:
-    """output: 1-16. Gibt (cob_id, 8-byte-payload) zurück. `existing` sind die drei
-    anderen Werte desselben TPDO-Frames (unverändert lassen, nur den Zielwert setzen)."""
+def build_frame(output: int, value: float, existing: list) -> tuple[int, bytes]:
+    """output: 1-16. Gibt (cob_id_base, 8-byte-payload) zurück. `existing` sind die drei anderen
+    Werte desselben TPDO-Frames (unverändert lassen, nur den Zielwert setzen)."""
     if not 1 <= output <= 16:
         raise ValueError("output muss 1-16 sein")
     block_index = (output - 1) // 4
     slot = (output - 1) % 4
     values = list(existing)
     values[slot] = value
-    raw = [round(v * 10) for v in values]
-    payload = struct.pack("<4h", *raw)
-    return ANALOG_COB_ID_BASE[block_index], payload
+    payload = ta.encode_analog_outputs(values)
+    return ta.ANALOG_OUTPUT_COB_ID_BASES[block_index], payload
 
 
 def main() -> None:
@@ -54,14 +44,15 @@ def main() -> None:
     parser.add_argument("--delay", type=float, default=1.0, help="Sekunden zwischen den Sendungen (Standard: 1.0)")
     args = parser.parse_args()
 
-    cob_id, payload = build_frame(args.output, args.value, [0.0, 0.0, 0.0, 0.0])
+    cob_id_base, payload = build_frame(args.output, args.value, [0.0, 0.0, 0.0, 0.0])
+    cob_id = cob_id_base | args.own_node_id
     print(f"Sende Ausgang {args.output} = {args.value} als Node {args.own_node_id} "
-          f"auf COB-ID 0x{cob_id | args.own_node_id:x}, Payload {payload.hex()}")
+          f"auf COB-ID 0x{cob_id:x}, Payload {payload.hex()}")
 
     bus = can.interface.Bus(channel=args.interface, interface="socketcan")
     try:
         for i in range(args.count):
-            msg = can.Message(arbitration_id=cob_id | args.own_node_id, data=payload, is_extended_id=False)
+            msg = can.Message(arbitration_id=cob_id, data=payload, is_extended_id=False)
             bus.send(msg)
             print(f"  Durchlauf {i + 1}/{args.count} gesendet")
             time.sleep(args.delay)

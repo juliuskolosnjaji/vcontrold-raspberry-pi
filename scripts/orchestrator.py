@@ -35,7 +35,7 @@ import time
 
 import ha_discovery
 import vito_variables
-from mqtt_common import make_client
+from mqtt_common import make_client, sync_retained_topics
 
 VCLIENT_HOST = "localhost"
 VCLIENT_PORT = "3002"
@@ -190,17 +190,11 @@ class Orchestrator:
     def _sync_variable_state(self) -> None:
         """Löscht (leere retained Nachricht) heizung/<var> für jede Variable, die beim letzten
         Start noch bekannt war, jetzt aber nicht mehr in vito.xml existiert."""
-        current = set(self.variables.keys())
-        try:
-            state = json.loads(VARIABLE_STATE_PATH.read_text()) if VARIABLE_STATE_PATH.exists() else {}
-        except (json.JSONDecodeError, OSError):
-            state = {}
-        stale = set(state.get("variables", [])) - current
-        for var_name in stale:
-            self.client.publish(f"{self.topic_heizung}/{var_name}", payload=None, retain=True)
+        current_topics = {f"{self.topic_heizung}/{name}" for name in self.variables}
+        stale = sync_retained_topics(self.client, VARIABLE_STATE_PATH, "variables", current_topics)
         if stale:
-            print(f"Retained Werte aufgeräumt: {len(stale)} verwaiste Variable(n) ({', '.join(sorted(stale))})")
-        VARIABLE_STATE_PATH.write_text(json.dumps({"variables": sorted(current)}, indent=2))
+            stale_names = sorted(topic.rsplit("/", 1)[-1] for topic in stale)
+            print(f"Retained Werte aufgeräumt: {len(stale)} verwaiste Variable(n) ({', '.join(stale_names)})")
 
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
