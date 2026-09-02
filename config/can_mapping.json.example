@@ -30,7 +30,5 @@
   "sdo_record": {
     "uvr_node_id": null,
     "slots": {}
-  },
-
-  "_beispiel_forward_as_set": "Ein Kanal in rx_ta_analog_outputs/rx_ta_digital_outputs/sdo_record kann statt eines reinen Strings auch ein Objekt sein, um den empfangenen Wert zusätzlich als Set-Anfrage an den Orchestrator weiterzuleiten -- z.B. wenn die UVR-Programmierung einen Sollwert an die Vitotronic durchreichen soll: {\"topic\": \"uvr_gewuenschte_raumtemp\", \"forward_as_set\": \"solltemperatur_normal\"} anstelle des Strings."
+  }
 }

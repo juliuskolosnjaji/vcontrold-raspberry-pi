@@ -26,6 +26,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts
 
 import can_sniffer
 import diagnostics
+import mqtt_mapping
 import mqtt_variables as mqtt_vars
 import ta_can_protocol as proto
 import vclient_wrapper
@@ -365,28 +366,21 @@ TA_RX_OUTPUT_SLOTS = 16  # rx_ta_analog_outputs/rx_ta_digital_outputs: Ausgang 1
 
 def parse_ta_rx_output_rows(key: str) -> dict:
     """Baut das 'outputs'-Dict für rx_ta_analog_outputs/rx_ta_digital_outputs aus den
-    Formularfeldern '{key}_slot_topic_<i>'/'{key}_slot_forward_<i>' (i=0..15, Ausgang i+1)."""
+    Formularfeldern '{key}_slot_topic_<i>' (i=0..15, Ausgang i+1). Soll ein empfangener Wert
+    zusätzlich an eine andere MQTT-Variable weitergegeben werden, siehe die eigenständige
+    MQTT-Mapping-Konfiguration auf der MQTT-Variablen-Seite (config/mqtt_mapping.json)."""
     outputs = {}
     for i in range(TA_RX_OUTPUT_SLOTS):
         topic = request.form.get(f"{key}_slot_topic_{i}", "").strip()
-        if not topic:
-            continue
-        forward = request.form.get(f"{key}_slot_forward_{i}", "").strip()
-        outputs[str(i + 1)] = {"topic": topic, "forward_as_set": forward} if forward else topic
+        if topic:
+            outputs[str(i + 1)] = topic
     return outputs
 
 
 def build_ta_rx_output_rows(config: dict) -> list:
     """Gegenstück zu parse_ta_rx_output_rows: 'outputs'-Dict -> flache Liste für's Template."""
     outputs = (config or {}).get("outputs", {})
-    rows = []
-    for i in range(TA_RX_OUTPUT_SLOTS):
-        c = outputs.get(str(i + 1))
-        if isinstance(c, dict):
-            rows.append({"topic": c.get("topic", ""), "forward": c.get("forward_as_set", "")})
-        else:
-            rows.append({"topic": c or "", "forward": ""})
-    return rows
+    return [{"topic": outputs.get(str(i + 1), "")} for i in range(TA_RX_OUTPUT_SLOTS)]
 
 
 def parse_discovery_fields(prefix: str, suffix, error_label: str, errors: list) -> dict:
@@ -484,13 +478,6 @@ def can_settings():
     for cycle in load_read_cycles().values():
         available_subtopics.update(cycle.get("variables", []))
 
-    # Weiterleitungsziele ("Weiterleitung"-Dropdown bei den Empfangs-Tabellen): nur Vcontrold-
-    # settable Variablen (Name existiert in vito.xml UND hat einen schreibbaren discovery-Eintrag
-    # in config/mqtt_variables.json) -- siehe orchestrator.py/handle_set_request().
-    available_set_keys = sorted(
-        k for k, v in mqtt_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)
-    )
-
     ta_net_outputs = mapping.get("ta_network_outputs", {})
     ta_net_analog = (ta_net_outputs.get("analog", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
     ta_net_digital = (ta_net_outputs.get("digital", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
@@ -501,10 +488,8 @@ def can_settings():
     # deckt "neu anzulegende Variable" ab.
     existing_uvr_topics = set()
     for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
-        for c in mapping.get(key, {}).get("outputs", {}).values():
-            existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
-    for c in mapping.get("sdo_record", {}).get("slots", {}).values():
-        existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
+        existing_uvr_topics.update(mapping.get(key, {}).get("outputs", {}).values())
+    existing_uvr_topics.update(mapping.get("sdo_record", {}).get("slots", {}).values())
     existing_uvr_topics.update(k for k in mqtt_variables if k not in vito_vars)
 
     return render_template(
@@ -519,7 +504,6 @@ def can_settings():
         own_node_number=mapping.get("own_node_number", 1),
         total_slots=TA_NETWORK_OUTPUT_SLOTS,
         available_subtopics=sorted(available_subtopics),
-        available_set_keys=available_set_keys,
         ta_net_analog=ta_net_analog,
         ta_net_digital=ta_net_digital,
         message=message,
@@ -768,6 +752,7 @@ def vcontrold_page():
 BLANK_CUSTOM_VARIABLE_ROWS = 3  # zusätzliche leere Zeilen für neue Custom-CAN-Variablen; "+ Zeile"
 # im Browser fügt bei Bedarf beliebig mehr hinzu (kein fixes Limit, da die Anzahl je nach
 # CAN-Ausbaustufe stark variieren kann)
+BLANK_MAPPING_ROWS = 3  # zusätzliche leere Zeilen für neue MQTT-Mappings, ebenfalls per "+ Zeile" erweiterbar
 
 
 def build_mqtt_variable_rows(entry: dict) -> dict:
@@ -835,12 +820,32 @@ def mqtt_variables_page():
             entry["discovery"] = parse_discovery_fields("customvar", i, f"'{name}'", errors)
             new_variables[name] = entry
 
+        mapping_indices = sorted(
+            int(key[len("mapping_source_"):])
+            for key in request.form
+            if key.startswith("mapping_source_") and key[len("mapping_source_"):].isdigit()
+        )
+        new_mappings = []
+        for i in mapping_indices:
+            source = request.form.get(f"mapping_source_{i}", "").strip()
+            target = request.form.get(f"mapping_target_{i}", "").strip()
+            if not source and not target:
+                continue
+            if not source or not target:
+                errors.append(f"Mapping-Zeile {i + 1}: Quelle und Ziel müssen beide gesetzt sein")
+                continue
+            if source == target:
+                errors.append(f"Mapping-Zeile {i + 1}: Quelle und Ziel sind identisch ('{source}')")
+                continue
+            new_mappings.append({"source": source, "target": target})
+
         if errors:
             message, message_ok = " / ".join(errors), False
             mqtt_variables = new_variables  # editierte (fehlerhafte) Werte im Formular zeigen
         else:
             mqtt_vars.save(new_variables)
             mqtt_variables = new_variables
+            mqtt_mapping.save(new_mappings)
 
             restarted, failed = [], []
             for service in ("orchestrator", "can-node"):
@@ -880,11 +885,23 @@ def mqtt_variables_page():
     for _ in range(BLANK_CUSTOM_VARIABLE_ROWS):
         custom_rows.append({"name": "", "display_name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
 
+    # Vorschlagsliste fürs Mapping: alle bekannten MQTT-Variablennamen (vito.xml + konfigurierte
+    # MQTT-Variablen). Freies Eintippen bleibt möglich, z.B. für einen reinen CAN-Empfangskanal,
+    # der (noch) keinen eigenen mqtt_variables.json-Eintrag hat.
+    known_variable_names = sorted(set(vito_vars.keys()) | set(mqtt_variables.keys()))
+
+    mapping_rows = [dict(m) for m in mqtt_mapping.load()]
+    for _ in range(BLANK_MAPPING_ROWS):
+        mapping_rows.append({"source": "", "target": ""})
+
     return render_template(
         "mqtt_variables.html",
         vito_rows=vito_rows,
         custom_rows=custom_rows,
         next_custom_index=len(custom_rows),
+        mapping_rows=mapping_rows,
+        next_mapping_index=len(mapping_rows),
+        known_variable_names=known_variable_names,
         message=message,
         message_ok=message_ok,
     )

@@ -1,0 +1,3 @@
+[
+  {"source": "uvr_vorlauftemperatur", "target": "TempKsoll"}
+]

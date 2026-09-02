@@ -292,15 +292,10 @@ def publish_can_discovery(
         published.add(key)
         published_topics.add(topic)
 
-    # sdo_record.slots/rx_ta_*_outputs.outputs-Werte sind entweder ein reiner Name oder ein
-    # {"topic": ..., "forward_as_set": ...}-Objekt (siehe can_node.py/publish_rx_value).
     names = set()
-    for channel in can_mapping.get("sdo_record", {}).get("slots", {}).values():
-        names.add(channel["topic"] if isinstance(channel, dict) else channel)
-    for channel in can_mapping.get("rx_ta_analog_outputs", {}).get("outputs", {}).values():
-        names.add(channel["topic"] if isinstance(channel, dict) else channel)
-    for channel in can_mapping.get("rx_ta_digital_outputs", {}).get("outputs", {}).values():
-        names.add(channel["topic"] if isinstance(channel, dict) else channel)
+    names.update(can_mapping.get("sdo_record", {}).get("slots", {}).values())
+    names.update(can_mapping.get("rx_ta_analog_outputs", {}).get("outputs", {}).values())
+    names.update(can_mapping.get("rx_ta_digital_outputs", {}).get("outputs", {}).values())
 
     for name in names - published:
         config = build_sensor_config(

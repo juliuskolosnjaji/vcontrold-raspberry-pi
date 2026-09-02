@@ -138,6 +138,43 @@
     </tr>
   </template>
 
+  <div class="card wide-card">
+    <h2>MQTT-Mapping</h2>
+    <p>Leitet den Wert einer beliebigen MQTT-Variable zusätzlich als Set-Anfrage an eine andere
+       MQTT-Variable weiter -- unabhängig davon, ob Quelle oder Ziel aus vito.xml oder CAN
+       stammen (z.B. um einen von der UVR berechneten Sollwert an die Vitotronic durchzureichen,
+       oder umgekehrt einen Vcontrold-Wert an eine CAN-Variable). Beide Felder akzeptieren jeden
+       bekannten Variablennamen von oben, auch frei eingetippt.</p>
+    <table class="canvar-table">
+      <tr><th>Quelle</th><th></th><th>Ziel</th></tr>
+      <tbody id="mapping-tbody">
+      {% for row in mapping_rows %}
+      {% set i = loop.index0 %}
+      <tr class="canvar-row">
+        <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_vorlauftemperatur"></td>
+        <td style="text-align:center;">→</td>
+        <td><input type="text" name="mapping_target_{{ i }}" value="{{ row.target }}" list="known-variable-names" placeholder="z.B. TempKsoll"></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="button" id="add-mapping-row">+ Zeile hinzufügen</button>
+  </div>
+
+  <datalist id="known-variable-names">
+    {% for n in known_variable_names %}
+    <option value="{{ n }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <template id="mapping-row-template">
+    <tr class="canvar-row">
+      <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_vorlauftemperatur"></td>
+      <td style="text-align:center;">→</td>
+      <td><input type="text" name="mapping_target___IDX__" list="known-variable-names" placeholder="z.B. TempKsoll"></td>
+    </tr>
+  </template>
+
   <div class="card">
     <button type="submit" onclick="return confirm('MQTT-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
   </div>
@@ -207,6 +244,17 @@ document.getElementById('add-customvar-row').addEventListener('click', function 
   document.getElementById('customvar-tbody').appendChild(clone);
   attachCanvarComponentHandler(document.getElementById('customvar-tbody').lastElementChild);
   nextCustomVarIndex++;
+});
+
+let nextMappingIndex = {{ next_mapping_index }};
+document.getElementById('add-mapping-row').addEventListener('click', function () {
+  const template = document.getElementById('mapping-row-template');
+  const clone = template.content.cloneNode(true);
+  clone.querySelectorAll('[name]').forEach(function (el) {
+    el.name = el.name.replace('__IDX__', nextMappingIndex);
+  });
+  document.getElementById('mapping-tbody').appendChild(clone);
+  nextMappingIndex++;
 });
 </script>
 {% endblock %}

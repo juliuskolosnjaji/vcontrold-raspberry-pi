@@ -15,7 +15,10 @@ mqtt_command_listener.py durch einen dauerhaft laufenden systemd-Dienst, der:
     erkennbar bleibt -- MQTT selbst verrät den Absender nicht),
   - nach jedem Set-Befehl den zugehörigen Get-Befehl nachschiebt, um die
     tatsächlich übernommene Vitotronic-Antwort zu verifizieren, statt dem
-    Set blind zu vertrauen.
+    Set blind zu vertrauen,
+  - config/mqtt_mapping.json: leitet den Wert einer beliebigen MQTT-Variable zusätzlich als
+    Set-Anfrage an eine andere MQTT-Variable weiter (siehe mqtt_mapping.py/_build_mapping_routes()),
+    unabhängig davon, ob Quelle/Ziel aus vito.xml oder CAN stammen.
 
 Warum ein Daemon statt eines echten Cronjobs: Cronjobs können zwischen zwei
 Läufen keine offene MQTT-Verbindung halten und daher nicht "on demand" auf
@@ -34,6 +37,7 @@ import tempfile
 import time
 
 import ha_discovery
+import mqtt_mapping
 import mqtt_variables as mqtt_vars
 import vito_variables
 from mqtt_common import make_client, sync_retained_topics
@@ -139,15 +143,19 @@ class Orchestrator:
             READ_CYCLES_PATH, "Kopiere config/read_cycles.json.example dorthin und passe die Zyklen an."
         )
         self.mqtt_variables = mqtt_vars.load()
+        self.mqtt_mapping = mqtt_mapping.load()
         self.variables = vito_variables.load_variables()
         self._log_loaded_cycles()
         self.cycle_batches = self._build_cycle_batches()
         self.client, env = make_client("orchestrator")
         self.topic_heizung = env.get("MQTT_TOPIC_HEIZUNG", "heizung")
         self.topic_cmd_heizung = env.get("MQTT_TOPIC_CMD_HEIZUNG", "heizung/cmd")
+        self.topic_uvr = env.get("MQTT_TOPIC_UVR", "uvr")
+        self.topic_cmd_uvr = env.get("MQTT_TOPIC_CMD_UVR", "uvr/cmd")
         self.discovery_enabled = env.get("MQTT_DISCOVERY_ENABLED", "true").lower() not in ("false", "0", "no")
         self.discovery_prefix = env.get("MQTT_DISCOVERY_PREFIX", "homeassistant")
         self.next_due = {name: 0.0 for name in self.read_cycles}
+        self.mapping_routes: dict[str, list[tuple[str, bool, str, str]]] = {}
 
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
@@ -202,10 +210,38 @@ class Orchestrator:
             self.mqtt_variables = mqtt_vars.load()
             print(f"MQTT-Variablen aufgeräumt: {len(removed)} verwaiste Einträge entfernt ({', '.join(sorted(removed))})")
 
+    def _build_mapping_routes(self) -> dict:
+        """Berechnet aus config/mqtt_mapping.json (Liste kanonischer {"source","target"}-
+        Variablennamen) die tatsächlichen MQTT-Topics: ob ein Name auf heizung/<name> oder
+        uvr/<name> liegt bzw. auf heizung/cmd/<name> oder uvr/cmd/<name> geschrieben wird, ergibt
+        sich automatisch daraus, ob der Name eine vito.xml-Variable ist. Gibt
+        {quell_topic: [(ziel_topic, als_json_verpacken, quell_name, ziel_name), ...]} zurück --
+        mehrere Mappings können denselben Quell-Topic beobachten."""
+        known = set(self.variables.keys())
+        routes: dict = {}
+        for m in self.mqtt_mapping:
+            source, target = m["source"], m["target"]
+            source_topic = f"{self.topic_heizung}/{source}" if source in known else f"{self.topic_uvr}/{source}"
+            if target in known:
+                target_topic, wrap_json = f"{self.topic_cmd_heizung}/{target}", True
+            else:
+                target_topic, wrap_json = f"{self.topic_cmd_uvr}/{target}", False
+            routes.setdefault(source_topic, []).append((target_topic, wrap_json, source, target))
+        return routes
+
     def _on_connect(self, client, userdata, flags, rc):
         client.subscribe(f"{self.topic_cmd_heizung}/#")
         print(f"Abonniert: {self.topic_cmd_heizung}/#")
         self._sync_variable_state()
+
+        self.mapping_routes = self._build_mapping_routes()
+        for source_topic in self.mapping_routes:
+            client.subscribe(source_topic)
+            client.message_callback_add(source_topic, self._on_mapping_source_message)
+        if self.mapping_routes:
+            target_count = sum(len(v) for v in self.mapping_routes.values())
+            print(f"MQTT-Mapping aktiv: {len(self.mapping_routes)} Quell-Topic(s) -> {target_count} Ziel(e)")
+
         if self.discovery_enabled:
             ha_discovery.publish_discovery(
                 client,
@@ -223,19 +259,33 @@ class Orchestrator:
         payload, source = self._parse_cmd_payload(msg.payload.decode().strip())
         self.handle_set_request(key, payload, source)
 
+    def _on_mapping_source_message(self, client, userdata, msg):
+        """Leitet den Wert einer gemappten Quell-Variable an ihre Ziel-Variable(n) weiter (siehe
+        config/mqtt_mapping.json/_build_mapping_routes()). Läuft über message_callback_add(),
+        deshalb komplett getrennt vom generischen _on_message()-Pfad für heizung/cmd/*."""
+        payload = msg.payload.decode().strip()
+        if not payload:
+            return
+        for target_topic, wrap_json, source, target in self.mapping_routes.get(msg.topic, []):
+            out_payload = json.dumps({"value": payload, "source": "mapping"}) if wrap_json else payload
+            client.publish(target_topic, out_payload)
+            print(f"MQTT-Mapping: {source}={payload} -> {target}")
+
     @staticmethod
     def _parse_cmd_payload(raw: str) -> tuple[str, str]:
         """Set-Anfragen auf topic_cmd_heizung kommen entweder direkt als roher Wert (von Home
-        Assistant) oder als JSON {"value": ..., "source": "can"} (von can_node.py, das UVR-
-        seitige Set-Anfragen über denselben Topic weiterleitet, siehe can_node.py/publish_rx_value
-        -- MQTT selbst verrät den Absender nicht, daher die Quellenkennung im Payload statt im
-        Topic). Gibt (wert_als_string, quelle_fuer_log) zurück."""
+        Assistant), als JSON {"value": ..., "source": "can"} (von can_node.py, das UVR-seitige
+        Set-Anfragen über denselben Topic weiterleitet, siehe can_node.py/publish_rx_value) oder
+        als JSON {"value": ..., "source": "mapping"} (von _on_mapping_source_message()) -- MQTT
+        selbst verrät den Absender nicht, daher die Quellenkennung im Payload statt im Topic.
+        Gibt (wert_als_string, quelle_fuer_log) zurück."""
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             return raw, "MQTT/HA"
         if isinstance(data, dict) and "value" in data:
-            source = "CAN/UVR" if data.get("source") == "can" else "MQTT/HA"
+            source_tag = data.get("source")
+            source = "CAN/UVR" if source_tag == "can" else "MQTT-Mapping" if source_tag == "mapping" else "MQTT/HA"
             return str(data["value"]), source
         return raw, "MQTT/HA"
 
