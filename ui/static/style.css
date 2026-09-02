@@ -19,6 +19,15 @@ button:hover { background: #263238; }
 .message-ok { color: #2e7d32; }
 .message-error { color: #c62828; }
 label { font-weight: 600; display: block; margin-top: 0.5rem; }
+nav a.logout { float: right; opacity: 0.8; }
+
+/* Login-Seite */
+.login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
+.login-card { text-align: left; }
+.login-card h1 { margin-top: 0; font-size: 1.4rem; }
+.login-card button { width: 100%; margin-top: 0.5rem; }
+.login-card input[type=password] { padding: 0.4rem; margin-bottom: 0.75rem; width: 100%; box-sizing: border-box; }
 
 /* Aufklappbare Abschnitte (Config-Editor, Vcontrold-Seite) */
 .config-file-block {

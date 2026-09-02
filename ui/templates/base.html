@@ -13,6 +13,7 @@
     <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>
     <a href="{{ url_for('diagnostics_page') }}">Diagnose</a>
     <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>
+    <a href="{{ url_for('logout') }}" class="logout">Abmelden</a>
   </nav>
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}

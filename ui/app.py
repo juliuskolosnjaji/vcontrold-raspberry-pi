@@ -6,7 +6,8 @@ Start (Entwicklung): python3 app.py
 Produktiv: siehe systemd/vcontrold-ui.service im Projekt-Root.
 
 Sicherheitshinweis: Diese UI kann Schreibbefehle an die Heizung senden. Nicht ohne
-Basic-Auth (siehe ui.env) und nicht ungeschützt im Internet exponieren.
+Login (Session-Cookie, Credentials siehe ui.env) und nicht ungeschützt im Internet
+exponieren.
 """
 import datetime
 import json
@@ -16,7 +17,9 @@ import shutil
 import sys
 import xml.etree.ElementTree as ET
 
-from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
+import hmac
+
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
@@ -37,9 +40,9 @@ CAN_VARIABLES_PATH = PROJECT_ROOT / "config" / "can_variables.json"
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
 app.config["TEMPLATES_AUTO_RELOAD"] = True  # Templates immer frisch von der Platte lesen
-# Nur für flash()-Nachrichten (signierte Session-Cookie) genutzt, nicht für Auth -- ein bei
-# jedem Start neu generierter Key ist hier unproblematisch (invalidiert höchstens eine gerade
-# offene Flash-Nachricht nach einem Neustart, kein Sicherheitsrisiko).
+# Signiert die Session-Cookie (Login-Status + flash()-Nachrichten). Ein bei jedem Start neu
+# generierter Key ist hier unproblematisch: er invalidiert nach einem Neustart höchstens die
+# aktive Anmeldung und offene Flash-Nachrichten, kein Sicherheitsrisiko.
 app.secret_key = os.urandom(24)
 
 
@@ -79,14 +82,43 @@ def get_ui_config() -> dict:
 
 @app.before_request
 def require_auth():
+    if request.endpoint in ("login", "logout", "static"):
+        return None
+    if not session.get("user"):
+        return redirect(url_for("login", next=request.path))
+    return None
+
+
+def check_credentials(cfg: dict, username: str, password: str) -> bool:
+    return hmac.compare_digest(username, cfg["username"]) and hmac.compare_digest(
+        password, cfg["password"]
+    )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
     cfg = get_ui_config()
-    auth = request.authorization
-    if not auth or auth.username != cfg["username"] or auth.password != cfg["password"]:
-        return (
-            "Anmeldung erforderlich",
-            401,
-            {"WWW-Authenticate": 'Basic realm="vcontrold-ui"'},
-        )
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if check_credentials(cfg, username, password):
+            session["user"] = username
+            # Nur lokale Pfade akzeptieren (sonst Open-Redirect via ?next=)
+            next_page = request.args.get("next") or url_for("dashboard")
+            if not next_page.startswith("/"):
+                next_page = url_for("dashboard")
+            return redirect(next_page)
+        error = "Benutzername oder Passwort falsch."
+    elif session.get("user"):
+        return redirect(url_for("dashboard"))
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.route("/")

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Anmelden - vcontrold UI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-main">
+    <div class="card login-card">
+      <h1>vcontrold UI</h1>
+      <form method="post" action="{{ url_for('login') }}{% if request.args.get('next') %}?next={{ request.args.get('next') | urlencode }}{% endif %}">
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" autofocus autocomplete="username" required>
+        <label for="password">Passwort</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        {% if error %}
+          <p class="message-error">{{ error }}</p>
+        {% endif %}
+        <button type="submit">Anmelden</button>
+      </form>
+    </div>
+  </main>
+</body>
+</html>
