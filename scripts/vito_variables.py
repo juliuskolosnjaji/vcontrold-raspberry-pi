@@ -25,6 +25,11 @@ DEFAULT_VITO_XML_PATH = "/etc/vcontrold/vito.xml"
 _COMMAND_NAME_PATTERN = re.compile(r"^(get|set)([A-Za-z0-9_]+)$")
 
 OVERRIDES_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "vito_command_overrides.json"
+# Merkt sich pro vito.xml-Variable, ob sie aktiv ist (default: aktiv, siehe is_active()) --
+# "deaktiviert" heißt: auf der Vcontrold-Seite nicht mehr für Zyklen wählbar, ohne dass das
+# zugrundeliegende get/set-Kommando aus vito.xml entfernt werden muss (der Nutzer wollte
+# explizit nicht bei jeder ungenutzten Variable das XML anfassen müssen).
+VARIABLE_STATE_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "vito_variable_state.json"
 
 
 def load_overrides(path: pathlib.Path = OVERRIDES_PATH) -> dict:
@@ -36,6 +41,34 @@ def load_overrides(path: pathlib.Path = OVERRIDES_PATH) -> dict:
 def save_overrides(overrides: dict, path: pathlib.Path = OVERRIDES_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(overrides, indent=2, ensure_ascii=False) + "\n")
+
+
+def load_variable_state(path: pathlib.Path = VARIABLE_STATE_PATH) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def save_variable_state(state: dict, path: pathlib.Path = VARIABLE_STATE_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+
+
+def is_active(var_name: str, state: dict) -> bool:
+    """Default aktiv -- ein Eintrag muss explizit {"active": false} sein, um eine Variable
+    zu deaktivieren. Fehlt der Eintrag komplett (z.B. neu aus vito.xml erkannt), gilt sie
+    automatisch als aktiv."""
+    return state.get(var_name, {}).get("active", True)
+
+
+def prune_removed_variable_state(current_names: set, state: dict = None) -> dict:
+    """Entfernt Zustandseinträge für Variablen, die nicht mehr in vito.xml existieren --
+    analog zu mqtt_variables.prune_removed_vito_variables(), aber für den Aktiv-Zustand."""
+    state = state if state is not None else load_variable_state()
+    cleaned = {name: v for name, v in state.items() if name in current_names}
+    if cleaned != state:
+        save_variable_state(cleaned)
+    return cleaned
 
 
 def list_raw_commands(path: str = DEFAULT_VITO_XML_PATH) -> list:

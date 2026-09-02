@@ -550,6 +550,7 @@ def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_var
             variable_cycle_index[var_name] = idx
 
     display_names = mqtt_vars.display_names(mqtt_variables)
+    variable_state = vito_variables.load_variable_state()
     rows = []
     for var_name, cmds in variables.items():
         entry = mqtt_variables.get(var_name, {})
@@ -561,6 +562,7 @@ def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_var
                 "set": cmds.get("set"),
                 "cycle_index": variable_cycle_index.get(var_name),
                 "settable": cmds.get("set") is not None and mqtt_vars.is_writable(entry),
+                "active": vito_variables.is_active(var_name, variable_state),
             }
         )
 
@@ -681,9 +683,14 @@ def variables_page():
                 continue
             cycle_defs.append({"name": name, "interval_seconds": interval, "variables": []})
 
+        new_variable_state = {}
         for var_name in variables:
+            active = request.form.get(f"var_active_{var_name}") == "1"
+            if not active:
+                new_variable_state[var_name] = {"active": False}
+
             cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
-            if cycle_choice:
+            if cycle_choice and active:
                 idx = int(cycle_choice)
                 if cycle_defs[idx] is None:
                     errors.append(f"'{var_name}': Zyklus {idx + 1} ist nicht definiert")
@@ -697,6 +704,7 @@ def variables_page():
                           for c in cycle_defs if c is not None}
             READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
             READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            vito_variables.save_variable_state(new_variable_state)
             cycles = new_cycles
             cycle_names = list(cycles.keys())
 
@@ -862,6 +870,11 @@ def mqtt_variables_page():
     for var_name, cmds in sorted(vito_vars.items()):
         entry = mqtt_variables.get(var_name, {})
         row = build_mqtt_variable_rows(entry)
+        # Set-Variablen sind direkt nach dem Erkennen aus vito.xml defaultmäßig aktiv (schreibbar)
+        # -- nur solange sie noch nie konfiguriert wurden (kein Eintrag in mqtt_variables.json).
+        # Sobald einmal gespeichert, gilt der explizit gespeicherte Zustand, auch wenn er "aus" ist.
+        if var_name not in mqtt_variables and cmds.get("set"):
+            row["writable"] = True
         row["name"] = var_name
         row["friendly_name"] = vito_variables.friendly_name(var_name)
         row["has_setter"] = bool(cmds.get("set"))
