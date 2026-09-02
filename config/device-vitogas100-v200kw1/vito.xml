@@ -1,4 +1,18 @@
 <?xml version="1.0"?>
+<!--
+  Basis: 34 ursprünglich verifizierte Kommandos. Ergänzt am 2026-09-02 um 40 weitere Getter,
+  Quelle openv/vcontrold xml/kw/vito.xml (dort für V200KW2/GWG_VBEM deklariert, nicht V200KW1),
+  einzeln in 7 Gruppen live gegen dieses Gerät getestet (siehe Session-Historie), alle liefern
+  plausible Werte. Getestet wurden nur Getter, keine Setter. Ausgelassen: alle Mischerkreis-M2/M3-
+  und Solar-Kommandos (Anlage hat weder zweiten Heizkreis noch Solar) sowie 7 Kommandos
+  (TempRLTist, TempRLVLTist, TempRList, TempST2ist, TempVList, State1, State2), die live keinen
+  echten Wert liefern und in Kombination vcontrold am Start abstürzen ließen (Ursache nicht
+  abschließend geklärt).
+
+  Auffällig: getTempVLsollM1 (Vorlauf-Solltemperatur M1) liefert konstant -0,1°C, für einen
+  aktiven Heizkreis unplausibel, noch nicht abschließend verifiziert (ggf. Anlage aktuell im
+  reinen WW-Betrieb ohne Heizanforderung).
+-->
 <vito>
   <devices>
     <device ID="2094" name="V200KW1" protocol="KW"/>
@@ -36,21 +50,6 @@
       <error>05 05</error>
       <description>Ermittle die Warmwassertemperatur in Grad C</description>
     </command>	
-	
-    <command name="getTempRList" protocmd="getaddr">
-      <addr>080A</addr>
-      <len>2</len>
-      <unit>UT</unit>
-      <error>05 05</error>
-      <description>Ermittle die Rüclauftemperatur in Grad C</description>  
-    </command> 
-	
-    <command name="getTempVList" protocmd="getaddr">
-      <addr>080C</addr>
-      <len>2</len>
-      <unit>UT</unit>
-      <description>Ermittle die Vorlauftemperatur in Grad C</description>
-    </command>  
 
     <command name="getTempATist" protocmd="getaddr">
       <addr>5525</addr>
@@ -72,27 +71,6 @@
       <unit>UT</unit>
       <description>Ermittle die Speichertemperatur Tiefpass in Grad C</description>
     </command>
-	
-    <command name="getTempST2ist" protocmd="getaddr">
-      <addr>0814</addr>
-      <len>2</len>
-      <unit>UT</unit>
-      <description>Ermittle die Speichertemperatur Tiefpass 2 in Grad C</description>
-    </command> 
-	
-    <command name="getTempRLTist" protocmd="getaddr">
-      <addr>0818</addr>
-      <len>2</len>
-      <unit>UT</unit>
-      <description>Ermittle die Rücklauftemperatur (17A) Tiefpass in Grad C</description>
-    </command> 
-	
-    <command name="getTempRLVLTist" protocmd="getaddr">
-      <addr>081A</addr>
-      <len>2</len>
-      <unit>UT</unit>
-      <description>Ermittle die Rück-/Vorlauflauftemperatur (17A) Tiefpass in Grad C</description>
-    </command> 
 
     <command name="getTempRaumTist" protocmd="getaddr">
       <addr>0896</addr>
@@ -120,20 +98,6 @@
       <len>1</len>
       <unit>RT</unit>
       <description>Ermittle die Brennerstörung </description>
-    </command> 
-	
-    <command name="getState1" protocmd="getaddr">
-      <addr>0842</addr>
-      <len>1</len>
-      <unit>RT</unit>
-      <description>Ermittle Zustand 1. Stufe </description>
-    </command> 
-	
-    <command name="getState2" protocmd="getaddr">
-      <addr>0849</addr>
-      <len>1</len>
-      <unit>RT</unit>
-      <description>Ermittle Zustand 2. Stufe </description>
     </command> 
 	
     <command name="getVerbrauch" protocmd="getaddr">
@@ -304,5 +268,245 @@
       <description>Setze die Raumsolltemperatur Party in Grad C</description>
     </command> 
 
+      <command name="getDevType" protocmd="getaddr">
+      <addr>00F8</addr>
+      <len>2</len>
+      <unit>DT</unit>
+      <description>Ermittle Device Typ der Anlage</description>
+    </command>
+    <command name="getStatusFrostM1" protocmd="getaddr">
+      <addr>2500</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Status Frostwarnung M1</description>
+    </command>
+    <command name="getStatusStoerung" protocmd="getaddr">
+      <addr>7579</addr>
+      <len>1</len>
+      <unit>RT</unit>
+      <description>Status Sammelstoerung</description>
+    </command>
+    <command name="getSystemTime" protocmd="getaddr">
+      <addr>088E</addr>
+      <len>8</len>
+      <unit>TI</unit>
+      <description>Ermittle Systemzeit</description>
+    </command>
+    <command name="getMischerM1" protocmd="getaddr">
+      <addr>254C</addr>
+      <len>1</len>
+      <unit>PR</unit>
+      <description>Ermittle Mischerposition M1</description>
+    </command>
+    <command name="getError0" protocmd="getaddr">
+      <addr>7507</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 1</description>
+    </command>
+    <command name="getError1" protocmd="getaddr">
+      <addr>7510</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 2</description>
+    </command>
+    <command name="getError2" protocmd="getaddr">
+      <addr>7519</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 3</description>
+    </command>
+    <command name="getError3" protocmd="getaddr">
+      <addr>7522</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 4</description>
+    </command>
+    <command name="getError4" protocmd="getaddr">
+      <addr>752B</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 5</description>
+    </command>
+    <command name="getError5" protocmd="getaddr">
+      <addr>7534</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 6</description>
+    </command>
+    <command name="getError6" protocmd="getaddr">
+      <addr>753D</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 7</description>
+    </command>
+    <command name="getError7" protocmd="getaddr">
+      <addr>7546</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 8</description>
+    </command>
+    <command name="getError8" protocmd="getaddr">
+      <addr>754F</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 9</description>
+    </command>
+    <command name="getError9" protocmd="getaddr">
+      <addr>7558</addr>
+      <len>9</len>
+      <unit>ES</unit>
+      <description>Ermittle Fehlerhistory Eintrag 10</description>
+    </command>
+    <command name="getTempKol" protocmd="getaddr">
+      <addr>6564</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Kollektortemperatur in Grad C</description>
+    </command>
+    <command name="getTempSpu" protocmd="getaddr">
+      <addr>6566</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Speichertemperatur unten in Grad C</description>
+    </command>
+    <command name="getTempVLsollM1" protocmd="getaddr">
+      <addr>2544</addr>
+      <len>2</len>
+      <unit>UT</unit>
+      <description>Ermittle die Vorlaufsolltemperatur M1 in Grad C</description>
+    </command>
+    <command name="getTempWWsoll" protocmd="getaddr">
+      <addr>6300</addr>
+      <len>1</len>
+      <unit>ST</unit>
+      <description>Ermittle die Warmwassersolltemperatur in Grad C</description>
+    </command>
+    <command name="getTimerM1Mo" protocmd="getaddr">
+      <addr>2000</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Montag M1</description>
+    </command>
+    <command name="getTimerM1Di" protocmd="getaddr">
+      <addr>2008</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Dienstag M1</description>
+    </command>
+    <command name="getTimerM1Mi" protocmd="getaddr">
+      <addr>2010</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit MIttwoch M1</description>
+    </command>
+    <command name="getTimerM1Do" protocmd="getaddr">
+      <addr>2018</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Donnerstag M1</description>
+    </command>
+    <command name="getTimerM1Fr" protocmd="getaddr">
+      <addr>2020</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Freitag M1</description>
+    </command>
+    <command name="getTimerM1Sa" protocmd="getaddr">
+      <addr>2028</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Samstag M1</description>
+    </command>
+    <command name="getTimerM1So" protocmd="getaddr">
+      <addr>2030</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Sonntag M1</description>
+    </command>
+    <command name="getTimerWWMo" protocmd="getaddr">
+      <addr>2100</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Montag Warmwasser</description>
+    </command>
+    <command name="getTimerWWDi" protocmd="getaddr">
+      <addr>2108</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Dienstag Warmwasser</description>
+    </command>
+    <command name="getTimerWWMi" protocmd="getaddr">
+      <addr>2110</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Mittwoch Warmwasser</description>
+    </command>
+    <command name="getTimerWWDo" protocmd="getaddr">
+      <addr>2118</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Donnerstag Warmwasser</description>
+    </command>
+    <command name="getTimerWWFr" protocmd="getaddr">
+      <addr>2120</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Freitag Warmwasser</description>
+    </command>
+    <command name="getTimerWWSa" protocmd="getaddr">
+      <addr>2128</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Samstag Warmwasser</description>
+    </command>
+    <command name="getTimerWWSo" protocmd="getaddr">
+      <addr>2130</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Sonntag Warmwasser</description>
+    </command>
+    <command name="getTimerZirkuMo" protocmd="getaddr">
+      <addr>2200</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Montag Zirku</description>
+    </command>
+    <command name="getTimerZirkuDi" protocmd="getaddr">
+      <addr>2208</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Dienstag Zirku</description>
+    </command>
+    <command name="getTimerZirkuMi" protocmd="getaddr">
+      <addr>2210</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Mittwoch Zirku</description>
+    </command>
+    <command name="getTimerZirkuDo" protocmd="getaddr">
+      <addr>2218</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Donnerstag Zirku</description>
+    </command>
+    <command name="getTimerZirkuFr" protocmd="getaddr">
+      <addr>2220</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Freitag Zirku</description>
+    </command>
+    <command name="getTimerZirkuSa" protocmd="getaddr">
+      <addr>2228</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Samstag Zirku</description>
+    </command>
+    <command name="getTimerZirkuSo" protocmd="getaddr">
+      <addr>2230</addr>
+      <len>8</len>
+      <unit>CT</unit>
+      <description>Schaltzeit Sonntag Zirku</description>
+    </command>
   </commands>
 </vito>
