@@ -134,25 +134,27 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 Kleinschreibung wie in vito.xml) ist gleichzeitig der MQTT-Subtopic-Name **und** der CAN-Kanalname
 in `config/can_mapping.json` — keine zwei verschiedenen Bezeichner für dieselbe Sache mehr zu pflegen.
 
-Konfiguration am einfachsten über die Web-UI unter **Variablen** (siehe Abschnitt 5) — dort siehst du
-alle aus `vito.xml` extrahierten Variablen in einer Tabelle, ordnest jeder einen Zyklus zu und
-legst fest, welche per MQTT/CAN setzbar sein sollen (inkl. Home-Assistant-Discovery-Metadaten).
-Manuell geht es auch:
+Konfiguration am einfachsten über die Web-UI: Zyklus-Zuordnung auf der **Vcontrold**-Seite (siehe
+Abschnitt 5), Anzeigename + Home-Assistant-Discovery-Konfiguration (ob/wie eine Variable per
+MQTT/CAN setzbar ist) auf der eigenständigen **MQTT-Variablen**-Seite. Manuell geht es auch:
 
 ```bash
 cp config/mqtt.env.example config/mqtt.env
 nano config/mqtt.env       # Broker-Host = deine Home-Assistant-IP
 cp config/read_cycles.json.example config/read_cycles.json
 nano config/read_cycles.json   # {"zyklus_name": {"interval_seconds": N, "variables": ["TempAist", ...]}}
-cp config/command_map.json.example config/command_map.json
-nano config/command_map.json   # {"TempRaumNorSoll": {"discovery": {...}}} pro settable Variable
+cp config/mqtt_variables.json.example config/mqtt_variables.json
+nano config/mqtt_variables.json   # {"TempRaumNorSoll": {"discovery": {...}}} pro settable Variable
 ```
 
-`command_map.json` wird automatisch aus `vito.xml` befüllt: **jede Variable mit einem Setter ist
-automatisch per MQTT/CAN setzbar** (keine separate Freischalt-Checkbox/Whitelist mehr). Die
-`set`/`get`-Kommandos selbst werden automatisch aus `vito.xml` aufgelöst, in `command_map.json`
-stehen nur noch optionale Discovery-Metadaten für Home Assistant (Einheit, Min/Max/Step, oder
-Auswahloptionen bei einem Select).
+`config/mqtt_variables.json` ist die zentrale Definition aller MQTT-Variablen (siehe
+`scripts/mqtt_variables.py`): Anzeigename + Home-Assistant-Discovery-Konfiguration, für
+vito.xml-Variablen genauso wie für reine CAN-Variablen (Abschnitt 3.2). Ein Eintrag mit
+`"discovery"`-Block macht die Variable schreibbar; ob das per Vcontrold (`heizung/cmd/<Name>`) oder
+direkt per CAN (`uvr/cmd/<Name>`) passiert, ergibt sich automatisch daraus, ob der Name auch als
+vito.xml-Variable mit Setter existiert (get/set-Kommandos werden dafür automatisch aus `vito.xml`
+aufgelöst, hier steht dazu nichts). Ohne `"discovery"`-Block bleibt ein Eintrag ein reiner
+Anzeigename-Override.
 
 Von `install.sh` bereits installiert, aber bewusst nicht automatisch gestartet (erst nach Konfiguration):
 
@@ -218,16 +220,20 @@ sudo systemctl status can-node
 Alle bisherigen CAN-Kanäle sind entweder Vitotronic-Werte (Pi → UVR, Namen aus `vito.xml`) oder
 reine Anzeigewerte von der UVR (UVR → Pi). Für einen Wert, den Home Assistant direkt **lesen und
 schreiben** soll — ohne dass die Vitotronic überhaupt beteiligt ist (z.B. ein manueller Override,
-den die UVR-Programmierung selbst auswertet) — gibt es `config/can_variables.json`.
+den die UVR-Programmierung selbst auswertet) — trägst du in `config/mqtt_variables.json` einen
+Namen ein, der **nicht** in `vito.xml` existiert (siehe Abschnitt 2) — genau das macht ihn
+automatisch zu einer reinen CAN-Variable statt einer Vcontrold-settable.
 
-**Über die Web-UI** (empfohlen): Auf der CAN-Einstellungen-Seite ganz unten "Custom CAN-Variablen"
-— Name, Typ (Number/Select) und je nach Typ Einheit/Min/Max/Step oder Optionen eintragen, speichern.
+**Über die Web-UI** (empfohlen): Auf der **MQTT-Variablen**-Seite unter "Custom CAN-Variablen"
+— Name, Anzeigename, Typ (Number/Select/Switch) und je nach Typ Einheit/Min/Max/Step oder Optionen
+eintragen, speichern. Den Namen zusätzlich als Kanal in einem Write-/Read-Slot auf der
+CAN-Einstellungen-Seite eintragen, damit tatsächlich etwas über CAN läuft.
 
 **Manuell**, falls gewünscht:
 
 ```bash
-cp config/can_variables.json.example config/can_variables.json
-nano config/can_variables.json
+cp config/mqtt_variables.json.example config/mqtt_variables.json
+nano config/mqtt_variables.json
 ```
 
 ```json
@@ -557,20 +563,22 @@ inklusive automatischer Home-Assistant-Discovery.
 
 **Automatisch per MQTT-Discovery (Standard):** `orchestrator.py` published beim Start automatisch
 Discovery-Konfigurationen für alle Datenpunkte aus `read_cycles.json` (als Sensoren) und alle
-Set-fähigen Einträge aus `command_map.json`, die einen `"discovery"`-Block haben (als Number/Select-
-Entities, siehe `config/command_map.json.example`). Home Assistant legt die Entities dann von selbst
-an, gruppiert unter einem gemeinsamen Gerät "Vitogas 100 (vcontrold)" — kein manuelles Editieren von
-`configuration.yaml` nötig. Voraussetzung: MQTT-Discovery ist in der Home-Assistant-MQTT-Integration
-aktiviert (Standardeinstellung) und `MQTT_DISCOVERY_PREFIX` in `config/mqtt.env` stimmt mit dem dort
-konfigurierten Präfix überein (`homeassistant` bei beiden ist der Standard). Deaktivieren:
-`MQTT_DISCOVERY_ENABLED=false` in `config/mqtt.env`.
+Set-fähigen Einträge aus `config/mqtt_variables.json`, die einen `"discovery"`-Block haben (als
+Number/Select/Switch-Entities, siehe `config/mqtt_variables.json.example`). Home Assistant legt die
+Entities dann von selbst an, gruppiert unter einem gemeinsamen Gerät "Vitogas 100 (vcontrold)" —
+kein manuelles Editieren von `configuration.yaml` nötig. Voraussetzung: MQTT-Discovery ist in der
+Home-Assistant-MQTT-Integration aktiviert (Standardeinstellung) und `MQTT_DISCOVERY_PREFIX` in
+`config/mqtt.env` stimmt mit dem dort konfigurierten Präfix überein (`homeassistant` bei beiden ist
+der Standard). Deaktivieren: `MQTT_DISCOVERY_ENABLED=false` in `config/mqtt.env`.
 
-Um einem weiteren Datenpunkt eine Number/Select-Entity zu geben, in `config/command_map.json` einen
-`"discovery"`-Block ergänzen (`{"component": "number", "unit": "...", "min": ..., "max": ..., "step": ...}`
-oder `{"component": "select", "options": [...]}`) und `orchestrator` neu starten.
+Um einem weiteren Datenpunkt eine Number/Select/Switch-Entity zu geben, auf der **MQTT-Variablen**-
+Seite (oder direkt in `config/mqtt_variables.json`) einen `"discovery"`-Block ergänzen
+(`{"component": "number", "unit": "...", "min": ..., "max": ..., "step": ...}` oder
+`{"component": "select", "options": [...]}` oder `{"component": "switch"}`) und `orchestrator`
+neu starten.
 
 **Verwaiste Entities werden automatisch entfernt.** Wird eine Variable aus `vito.xml` gelöscht (oder
-ein Kanal aus `can_mapping.json`/`can_variables.json`), merkt sich `orchestrator.py`/`can_node.py`
+ein Kanal aus `can_mapping.json`/`mqtt_variables.json`), merkt sich `orchestrator.py`/`can_node.py`
 in `config/.discovery_state.json` (lokale Laufzeit-Datei, kein Template), welche Discovery-Topics
 beim letzten Start published wurden. Bei jedem Neustart wird die Differenz zum aktuellen Stand
 gebildet und die verwaisten Topics werden per leerer retained Nachricht gelöscht -- Home Assistant
@@ -588,7 +596,7 @@ eine Sensor-Entity unter einem eigenen Gerät "UVR16x2 (CAN)" in Home Assistant,
 **Alternativ manuell:** `homeassistant/configuration_snippet.yaml` enthält dieselben Entities als
 statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
 
-## 5. Web-UI (Vcontrold, MQTT-Einstellungen, CAN-Einstellungen, Diagnose, CAN-Sniffer)
+## 5. Web-UI (Vcontrold, MQTT-Variablen, MQTT-Einstellungen, CAN-Einstellungen, Diagnose, CAN-Sniffer)
 
 Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten.
 
@@ -603,17 +611,24 @@ vito.xml in fünf aufklappbaren Abschnitten:
 3. **vito.xml**: derselbe Import-/Bearbeiten-Mechanismus wie Abschnitt 1, für die Kommando-
    Definitionen.
 4. **Zyklen**: Intervalle der bis zu 4 Read-Zyklen (`config/read_cycles.json`).
-5. **MQTT-Konfiguration**: alle aus `vito.xml` extrahierten Getter/Setter als Tabelle — pro
-   Variable per Dropdown einem Zyklus zuordnen und (bei vorhandenem Setter automatisch settable,
-   keine Checkbox nötig) Home-Assistant-Discovery-Metadaten (Einheit, Min/Max/Step oder
-   Auswahloptionen) pflegen. Ersetzt manuelles Editieren von `config/command_map.json`. Speichern
-   startet `orchestrator` (falls aktiv) automatisch neu.
+5. **Variablen-Zuordnung**: alle aus `vito.xml` extrahierten Getter/Setter als Tabelle — pro
+   Variable per Dropdown einem Zyklus zuordnen. Anzeigename und Home-Assistant-Discovery-
+   Konfiguration gehören **nicht** hierher, sondern zur eigenständigen MQTT-Variablen-Seite (siehe
+   unten). Speichern startet `orchestrator` (falls aktiv) automatisch neu.
 6. **Log der Kommunikation mit Vitotronic**: liest `/tmp/vcontrold.log` (per Klick oder alle 5s
    automatisch aktualisiert) — zeigt die tatsächlichen Get/Set-Kommandos samt Werten, sofern
    `-g/--debug` in `systemd/vcontrold.service` aktiv ist (Standard).
 
 Jeder Abschnitt bleibt zusätzlich als eigenständige Seite erreichbar (`/console`, `/config`,
 `/variables`) — praktisch für Lesezeichen oder wenn nur ein einzelner Bereich gebraucht wird.
+
+**MQTT-Variablen-Seite** (`/mqtt-variables`, eigener Nav-Punkt, bewusst weder Teil von Vcontrold
+noch der CAN-Einstellungen): zentrale Definition aller MQTT-Variablen (`config/mqtt_variables.json`,
+siehe Abschnitt 2) -- Anzeigename in Home Assistant und ob/wie eine Variable per MQTT/CAN setzbar
+ist (Number/Select/Switch, inkl. Einheit/Min/Max/Step/Optionen). Zwei Tabellen: alle aus `vito.xml`
+extrahierten Variablen (automatisch vorgeschlagen, "Schreibbar" nur wählbar wenn vito.xml einen
+Setter hat) sowie frei anlegbare Custom-CAN-Variablen (Name existiert nicht in vito.xml, siehe
+Abschnitt 3.2). Speichern startet `orchestrator` und `can-node` (falls aktiv) automatisch neu.
 
 Daneben:
 

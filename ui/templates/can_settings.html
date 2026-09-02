@@ -9,7 +9,10 @@
      Werte per CAN gesendet bzw. empfangen werden. Die Abschnitte unten nutzen ausschließlich
      bestätigte, an echter Hardware verifizierte Formate (siehe README Abschnitt 3.3-3.5) --
      CAN-IDs sind erst nach dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen
-     bekannt, bis dahin einfach leer lassen.</p>
+     bekannt, bis dahin einfach leer lassen. Neue schreibbare CAN-Variablen (unabhängig von
+     vito.xml, Home Assistant ↔ UVR ohne Vitotronic) legst du auf der eigenständigen
+     <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite an -- hier trägst du
+     den Namen dann nur noch als Kanal ein.</p>
 </div>
 
 <datalist id="tx-subtopics">
@@ -134,46 +137,6 @@
   </div>
 
   <div class="card">
-    <h2>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</h2>
-    <p>Komplett unabhängig von <code>vito.xml</code>/vcontrold: Home Assistant kann diese Werte
-       direkt lesen <strong>und</strong> schreiben, der Wert geht per CAN direkt an die UVR.
-       Den Namen zusätzlich als Kanal bei "TA-Netzwerkausgänge senden" oben eintragen, damit er
-       tatsächlich über CAN läuft.</p>
-    <table class="canvar-table">
-      <tr>
-        <th>Name</th>
-        <th>Typ</th>
-        <th>Einheit</th>
-        <th>Min/Max/Step</th>
-        <th>Optionen (bei Select)</th>
-      </tr>
-      {% for i in num_canvar_rows %}
-      {% set row = canvar_rows[i] %}
-      <tr class="canvar-row">
-        <td><input type="text" name="canvar_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor"></td>
-        <td>
-          <select name="canvar_component_{{ i }}" class="canvar-component">
-            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
-            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
-          </select>
-        </td>
-        <td class="canvar-number" {% if row.component == "select" %}style="display:none"{% endif %}>
-          <input type="text" name="canvar_unit_{{ i }}" value="{{ row.unit }}" placeholder="°C">
-        </td>
-        <td class="canvar-number" {% if row.component == "select" %}style="display:none"{% endif %}>
-          <input type="text" name="canvar_min_{{ i }}" value="{{ row.min }}" placeholder="Min">
-          <input type="text" name="canvar_max_{{ i }}" value="{{ row.max }}" placeholder="Max">
-          <input type="text" name="canvar_step_{{ i }}" value="{{ row.step }}" placeholder="Step">
-        </td>
-        <td class="canvar-select" {% if row.component != "select" %}style="display:none"{% endif %}>
-          <input type="text" name="canvar_options_{{ i }}" value="{{ row.options }}" placeholder="AUTO, AN, AUS">
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-
-  <div class="card">
     <button type="submit" onclick="return confirm('CAN-Einstellungen speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
   </div>
 </form>
@@ -192,17 +155,4 @@
   .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
 </style>
-
-<script>
-document.querySelectorAll('.canvar-component').forEach(function (select) {
-  const row = select.closest('tr');
-  function update() {
-    const isSelect = select.value === 'select';
-    row.querySelectorAll('.canvar-number').forEach(el => el.style.display = isSelect ? 'none' : '');
-    row.querySelectorAll('.canvar-select').forEach(el => el.style.display = isSelect ? '' : 'none');
-  }
-  select.addEventListener('change', update);
-  update();
-});
-</script>
 {% endblock %}

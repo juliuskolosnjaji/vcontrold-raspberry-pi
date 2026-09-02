@@ -1,5 +1,0 @@
-{
-  "_hinweis": "Optional: kanonischer Variablenname (aus vito.xml, ohne get/set) -> benutzerdefinierter Anzeigename in Home Assistant. getTempKsoll/setTempKsoll bleiben als vclient-Kommandos unveraendert, nur der Name in HA aendert sich. Ohne Eintrag hier wird automatisch aus dem Variablennamen abgeleitet (TempKsoll -> 'Temp Ksoll').",
-  "TempKsoll": "Kesseltemperatur Soll",
-  "TempKist": "Kesseltemperatur Ist"
-}

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}MQTT-Variablen - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>MQTT-Variablen</h1>
+
+<div class="card">
+  <p>Zentrale Definition aller MQTT-Variablen: Anzeigename in Home Assistant + ob/wie eine
+     Variable per MQTT setzbar ist. Unabhängig davon, ob der Wert aus vito.xml (Vcontrold) oder
+     direkt von CAN stammt -- weder Bestandteil der <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-
+     noch der <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite. Welchem
+     Lese-Zyklus eine vito.xml-Variable zugeordnet ist, bleibt auf der Vcontrold-Seite; welche
+     CAN-ID/welcher Sendekanal eine Variable nutzt, bleibt auf der CAN-Einstellungen-Seite.</p>
+</div>
+
+<form method="post">
+  <div class="card wide-card">
+    <h2>vito.xml-Variablen</h2>
+    <p>Erscheint automatisch, sobald vito.xml einen Getter dafür hat. "Anzeigename" ändert nur den
+       in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet),
+       <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert. "Schreibbar" ist nur
+       wählbar, wenn vito.xml einen Setter hat -- macht die Variable per <code>heizung/cmd/&lt;Name&gt;</code>
+       setzbar (Home Assistant und/oder CAN-Weiterleitung).</p>
+    <table class="variables-table">
+      <tr>
+        <th>Variable</th>
+        <th>Anzeigename in HA</th>
+        <th>Schreibbar?</th>
+        <th colspan="4">Discovery</th>
+      </tr>
+      {% for row in vito_rows %}
+      <tr class="{{ 'no-set' if not row.has_setter }}">
+        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
+        <td>
+          <input type="text" name="vitovar_display_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
+        </td>
+        {% if row.has_setter %}
+        <td>
+          <label style="width:auto;display:inline-block;">
+            <input type="checkbox" name="vitovar_writable_{{ row.name }}" value="1" class="writable-toggle" {% if row.writable %}checked{% endif %} style="width:auto;display:inline-block;">
+          </label>
+        </td>
+        <td class="discovery-field">
+          <select name="vitovar_component_{{ row.name }}" class="discovery-component" {% if not row.writable %}disabled{% endif %}>
+            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
+            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
+            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
+          </select>
+        </td>
+        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
+          <input type="text" name="vitovar_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C" {% if not row.writable %}disabled{% endif %}>
+        </td>
+        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
+          <input type="text" name="vitovar_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min" {% if not row.writable %}disabled{% endif %}>
+          <input type="text" name="vitovar_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max" {% if not row.writable %}disabled{% endif %}>
+          <input type="text" name="vitovar_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step" {% if not row.writable %}disabled{% endif %}>
+        </td>
+        <td class="discovery-field discovery-select" {% if row.component != "select" %}style="display:none"{% endif %}>
+          <input type="text" name="vitovar_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ..." {% if not row.writable %}disabled{% endif %}>
+        </td>
+        {% else %}
+        <td colspan="5" class="no-set-cell">kein Setter in vito.xml → nicht schreibbar</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card wide-card">
+    <h2>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</h2>
+    <p>Name existiert NICHT in vito.xml. Komplett unabhängig von vito.xml/vcontrold: Home Assistant
+       kann diese Werte direkt lesen <strong>und</strong> schreiben, der Wert geht per CAN direkt an
+       die UVR. Den Namen zusätzlich als Kanal bei
+       <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a> → "TA-Netzwerkausgänge senden"
+       eintragen, damit er tatsächlich über CAN läuft.</p>
+    <table class="canvar-table">
+      <tr>
+        <th>Name</th>
+        <th>Anzeigename in HA</th>
+        <th>Typ</th>
+        <th>Einheit</th>
+        <th>Min/Max/Step</th>
+        <th>Optionen (bei Select)</th>
+      </tr>
+      {% for i in num_custom_rows %}
+      {% set row = custom_rows[i] %}
+      <tr class="canvar-row">
+        <td><input type="text" name="customvar_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor"></td>
+        <td><input type="text" name="customvar_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
+        <td>
+          <select name="customvar_component_{{ i }}" class="canvar-component">
+            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
+            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
+            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
+          </select>
+        </td>
+        <td class="canvar-number" {% if row.component == "select" %}style="display:none"{% endif %}>
+          <input type="text" name="customvar_unit_{{ i }}" value="{{ row.unit }}" placeholder="°C">
+        </td>
+        <td class="canvar-number" {% if row.component == "select" %}style="display:none"{% endif %}>
+          <input type="text" name="customvar_min_{{ i }}" value="{{ row.min }}" placeholder="Min">
+          <input type="text" name="customvar_max_{{ i }}" value="{{ row.max }}" placeholder="Max">
+          <input type="text" name="customvar_step_{{ i }}" value="{{ row.step }}" placeholder="Step">
+        </td>
+        <td class="canvar-select" {% if row.component != "select" %}style="display:none"{% endif %}>
+          <input type="text" name="customvar_options_{{ i }}" value="{{ row.options }}" placeholder="AUTO, AN, AUS">
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <button type="submit" onclick="return confirm('MQTT-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
+  </div>
+</form>
+
+{% if message %}
+<div class="card">
+  <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+</div>
+{% endif %}
+
+<style>
+  .wide-card { max-width: none; }
+  .variables-table, .canvar-table { width: 100%; font-size: 0.85rem; }
+  .variables-table th, .variables-table td, .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
+  .variables-table input, .variables-table select, .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
+  .variables-table td input[type=text] { min-width: 70px; }
+  .no-set-cell { color: #888; font-style: italic; }
+</style>
+
+<script>
+// Discovery-Felder je Zeile nur bei aktiviertem "Schreibbar"-Häkchen aktiv/sichtbar, und
+// innerhalb dessen nur die zur gewählten Komponente (number/select) passenden Felder.
+document.querySelectorAll('.writable-toggle').forEach(function (toggle) {
+  const row = toggle.closest('tr');
+  const componentSelect = row.querySelector('.discovery-component');
+
+  function update() {
+    const writable = toggle.checked;
+    const component = componentSelect.value;
+    row.querySelectorAll('.discovery-field').forEach(function (el) {
+      el.querySelectorAll('input, select').forEach(input => input.disabled = !writable);
+    });
+    componentSelect.disabled = !writable;
+    row.querySelectorAll('.discovery-number').forEach(el => el.style.display = (writable && component === 'number') ? '' : 'none');
+    row.querySelectorAll('.discovery-select').forEach(el => el.style.display = (writable && component === 'select') ? '' : 'none');
+  }
+
+  toggle.addEventListener('change', update);
+  componentSelect.addEventListener('change', update);
+  update();
+});
+
+document.querySelectorAll('.canvar-component').forEach(function (select) {
+  const row = select.closest('tr');
+  function update() {
+    const isSelect = select.value === 'select';
+    row.querySelectorAll('.canvar-number').forEach(el => el.style.display = isSelect ? 'none' : '');
+    row.querySelectorAll('.canvar-select').forEach(el => el.style.display = isSelect ? '' : 'none');
+  }
+  select.addEventListener('change', update);
+  update();
+});
+</script>
+{% endblock %}

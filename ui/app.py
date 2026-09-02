@@ -26,6 +26,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts
 
 import can_sniffer
 import diagnostics
+import mqtt_variables as mqtt_vars
 import ta_can_protocol as proto
 import vclient_wrapper
 import vito_variables
@@ -35,7 +36,6 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI_ENV_PATH = pathlib.Path(__file__).resolve().parent / "ui.env"
 MQTT_ENV_PATH = PROJECT_ROOT / "config" / "mqtt.env"
 CAN_MAPPING_PATH = PROJECT_ROOT / "config" / "can_mapping.json"
-CAN_VARIABLES_PATH = PROJECT_ROOT / "config" / "can_variables.json"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB reicht für Geräte-XML
@@ -359,7 +359,6 @@ def load_can_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
-CAN_VARIABLE_ROWS = 8  # Anzahl editierbarer Zeilen für custom CAN-Variablen
 TA_NETWORK_OUTPUT_SLOTS = 16  # TA-Netzwerkausgänge (bestätigtes Schema, siehe ta_canopen.py)
 TA_RX_OUTPUT_SLOTS = 16  # rx_ta_analog_outputs/rx_ta_digital_outputs: Ausgang 1-16 (siehe README 3.4/3.5)
 
@@ -415,19 +414,13 @@ def parse_discovery_fields(prefix: str, suffix, error_label: str, errors: list) 
     return discovery
 
 
-def load_can_variables() -> dict:
-    if not CAN_VARIABLES_PATH.exists():
-        return {}
-    return {k: v for k, v in json.loads(CAN_VARIABLES_PATH.read_text()).items() if isinstance(v, dict)}
-
-
 @app.route("/can-settings", methods=["GET", "POST"])
 def can_settings():
     message = None
     message_ok = None
     cfg = get_ui_config()
     mapping = load_can_mapping()
-    can_variables = load_can_variables()
+    mqtt_variables = mqtt_vars.load()
     vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
 
     if request.method == "POST":
@@ -465,24 +458,13 @@ def can_settings():
         if any(ta_net_analog) or any(ta_net_digital):
             new_mapping["ta_network_outputs"] = {"analog": ta_net_analog, "digital": ta_net_digital}
 
-        new_can_variables = {}
-        for i in range(CAN_VARIABLE_ROWS):
-            name = request.form.get(f"canvar_name_{i}", "").strip()
-            if not name:
-                continue
-            discovery = parse_discovery_fields("canvar", i, f"Custom CAN-Variable '{name}'", errors)
-            new_can_variables[name] = {"discovery": discovery}
-
         if errors:
             message, message_ok = " / ".join(errors), False
             mapping = new_mapping  # editierte (fehlerhafte) Werte im Formular zeigen
-            can_variables = new_can_variables
         else:
             CAN_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
             CAN_MAPPING_PATH.write_text(json.dumps(new_mapping, indent=2, ensure_ascii=False) + "\n")
-            CAN_VARIABLES_PATH.write_text(json.dumps(new_can_variables, indent=2, ensure_ascii=False) + "\n")
             mapping = new_mapping
-            can_variables = new_can_variables
 
             status = diagnostics.service_status("can-node")
             if status["state"] == "active":
@@ -502,45 +484,28 @@ def can_settings():
     for cycle in load_read_cycles().values():
         available_subtopics.update(cycle.get("variables", []))
 
-    command_map_path = PROJECT_ROOT / "config" / "command_map.json"
-    available_set_keys = (
-        sorted(k for k, v in json.loads(command_map_path.read_text()).items() if isinstance(v, dict))
-        if command_map_path.exists()
-        else []
+    # Weiterleitungsziele ("Weiterleitung"-Dropdown bei den Empfangs-Tabellen): nur Vcontrold-
+    # settable Variablen (Name existiert in vito.xml UND hat einen schreibbaren discovery-Eintrag
+    # in config/mqtt_variables.json) -- siehe orchestrator.py/handle_set_request().
+    available_set_keys = sorted(
+        k for k, v in mqtt_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)
     )
-
-    canvar_rows = []
-    for name, entry in can_variables.items():
-        discovery = entry.get("discovery", {})
-        canvar_rows.append(
-            {
-                "name": name,
-                "component": discovery.get("component", "number"),
-                "unit": discovery.get("unit", ""),
-                "min": discovery.get("min", ""),
-                "max": discovery.get("max", ""),
-                "step": discovery.get("step", ""),
-                "options": ", ".join(discovery.get("options", [])),
-            }
-        )
-    while len(canvar_rows) < CAN_VARIABLE_ROWS:
-        canvar_rows.append({"name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
-    canvar_rows = canvar_rows[:CAN_VARIABLE_ROWS]
 
     ta_net_outputs = mapping.get("ta_network_outputs", {})
     ta_net_analog = (ta_net_outputs.get("analog", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
     ta_net_digital = (ta_net_outputs.get("digital", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
 
     # Vorschlagsliste für Empfangs-Kanalnamen ("existierende Variable" statt neuer Name): bereits
-    # verwendete Kanäle aus allen rx-Wegen + custom CAN-Variablen. Freies Eintippen bleibt möglich
-    # (Datalist erzwingt nichts), das deckt "neu anzulegende Variable" ab.
+    # verwendete Kanäle aus allen rx-Wegen + alle CAN-only-Variablen aus der MQTT-Variablen-Seite
+    # (Name nicht in vito.xml). Freies Eintippen bleibt möglich (Datalist erzwingt nichts), das
+    # deckt "neu anzulegende Variable" ab.
     existing_uvr_topics = set()
     for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
         for c in mapping.get(key, {}).get("outputs", {}).values():
             existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
     for c in mapping.get("sdo_record", {}).get("slots", {}).values():
         existing_uvr_topics.add(c["topic"] if isinstance(c, dict) else c)
-    existing_uvr_topics.update(can_variables.keys())
+    existing_uvr_topics.update(k for k in mqtt_variables if k not in vito_vars)
 
     return render_template(
         "can_settings.html",
@@ -555,18 +520,14 @@ def can_settings():
         total_slots=TA_NETWORK_OUTPUT_SLOTS,
         available_subtopics=sorted(available_subtopics),
         available_set_keys=available_set_keys,
-        canvar_rows=canvar_rows,
         ta_net_analog=ta_net_analog,
         ta_net_digital=ta_net_digital,
-        num_canvar_rows=range(CAN_VARIABLE_ROWS),
         message=message,
         message_ok=message_ok,
     )
 
 
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
-COMMAND_MAP_PATH_UI = PROJECT_ROOT / "config" / "command_map.json"
-DISPLAY_NAMES_PATH_UI = PROJECT_ROOT / "config" / "display_names.json"
 CYCLE_COUNT = 4  # feste Anzahl konfigurierbarer Zyklen
 
 
@@ -576,42 +537,30 @@ def load_read_cycles() -> dict:
     return json.loads(READ_CYCLES_PATH.read_text())
 
 
-def load_command_map_ui() -> dict:
-    if not COMMAND_MAP_PATH_UI.exists():
-        return {}
-    return {k: v for k, v in json.loads(COMMAND_MAP_PATH_UI.read_text()).items() if isinstance(v, dict)}
-
-
-def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, command_map: dict) -> dict:
+def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_variables: dict) -> dict:
     """Baut cycle_rows/rows fürs Variablen-Template aus den geladenen Rohdaten -- gemeinsam
     genutzt von variables_page() (GET) und vcontrold_page() (eingebettete Ansicht), damit beide
-    garantiert dieselbe Aufbereitung zeigen."""
+    garantiert dieselbe Aufbereitung zeigen. Reine Zyklus-Zuordnung -- Anzeigename und
+    Home-Assistant-Discovery-Konfiguration werden auf der eigenständigen MQTT-Variablen-Seite
+    gepflegt (siehe mqtt_variables_page()), nicht hier."""
     cycle_names = list(cycles.keys())
     variable_cycle_index = {}
     for idx, cname in enumerate(cycle_names):
         for var_name in cycles[cname].get("variables", []):
             variable_cycle_index[var_name] = idx
 
-    display_names = vito_variables.load_display_names()
+    display_names = mqtt_vars.display_names(mqtt_variables)
     rows = []
     for var_name, cmds in variables.items():
-        entry = command_map.get(var_name, {})
-        discovery = entry.get("discovery", {})
+        entry = mqtt_variables.get(var_name, {})
         rows.append(
             {
                 "name": var_name,
-                "friendly_name": vito_variables.friendly_name(var_name),
-                "display_name": display_names.get(var_name, ""),
+                "friendly_name": display_names.get(var_name) or vito_variables.friendly_name(var_name),
                 "get": cmds.get("get"),
                 "set": cmds.get("set"),
                 "cycle_index": variable_cycle_index.get(var_name),
-                "settable": var_name in command_map,
-                "component": discovery.get("component", "number"),
-                "unit": discovery.get("unit", ""),
-                "min": discovery.get("min", ""),
-                "max": discovery.get("max", ""),
-                "step": discovery.get("step", ""),
-                "options": ", ".join(discovery.get("options", [])),
+                "settable": cmds.get("set") is not None and mqtt_vars.is_writable(entry),
             }
         )
 
@@ -632,7 +581,7 @@ def variables_page():
     cfg = get_ui_config()
     variables = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
     cycles = load_read_cycles()
-    command_map = load_command_map_ui()
+    mqtt_variables = mqtt_vars.load()
 
     # Bestehende Zyklen auf die 4 festen Slots abbilden (Reihenfolge = Einfüge-Reihenfolge in der JSON)
     cycle_names = list(cycles.keys())
@@ -657,9 +606,7 @@ def variables_page():
                 continue
             cycle_defs.append({"name": name, "interval_seconds": interval, "variables": []})
 
-        new_command_map = {}
-        new_display_names = {}
-        for var_name, cmds in variables.items():
+        for var_name in variables:
             cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
             if cycle_choice:
                 idx = int(cycle_choice)
@@ -668,18 +615,6 @@ def variables_page():
                 else:
                     cycle_defs[idx]["variables"].append(var_name)
 
-            display_name = request.form.get(f"var_display_name_{var_name}", "").strip()
-            if display_name:
-                new_display_names[var_name] = display_name
-
-            if not cmds.get("set"):
-                continue  # ohne Setter in vito.xml kann diese Variable nicht settable sein
-            # Automatisch settable, sobald vito.xml einen Setter hat -- keine separate
-            # Freischalt-Checkbox mehr (frühere Whitelist-Logik bewusst entfernt).
-
-            discovery = parse_discovery_fields("var", var_name, f"'{var_name}'", errors)
-            new_command_map[var_name] = {"discovery": discovery}
-
         if errors:
             message, message_ok = " / ".join(errors), False
         else:
@@ -687,10 +622,7 @@ def variables_page():
                           for c in cycle_defs if c is not None}
             READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
             READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
-            COMMAND_MAP_PATH_UI.write_text(json.dumps(new_command_map, indent=2, ensure_ascii=False) + "\n")
-            DISPLAY_NAMES_PATH_UI.write_text(json.dumps(new_display_names, indent=2, ensure_ascii=False) + "\n")
             cycles = new_cycles
-            command_map = new_command_map
             cycle_names = list(cycles.keys())
 
             restarted = []
@@ -714,7 +646,7 @@ def variables_page():
         message=message,
         message_ok=message_ok,
         post_action=url_for("variables_page"),
-        **build_variables_view_data(cfg, variables, cycles, command_map),
+        **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
     )
 
 
@@ -737,7 +669,7 @@ def vcontrold_page():
 
     variables = vito_variables.try_load_variables(cfg["device_xml"])
     cycles = load_read_cycles()
-    command_map = load_command_map_ui()
+    mqtt_variables = mqtt_vars.load()
 
     return render_template(
         "vcontrold.html",
@@ -753,7 +685,118 @@ def vcontrold_page():
         post_action_config=url_for("config_page"),
         post_action_console=url_for("console"),
         post_action_variables=url_for("variables_page"),
-        **build_variables_view_data(cfg, variables, cycles, command_map),
+        **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
+    )
+
+
+MQTT_VARIABLE_ROWS = 10  # Anzahl zusätzlicher freier Zeilen für Nicht-vito.xml-Variablen (CAN-only)
+
+
+def build_mqtt_variable_rows(entry: dict) -> dict:
+    discovery = entry.get("discovery", {})
+    return {
+        "display_name": entry.get("display_name", ""),
+        "writable": bool(discovery),
+        "component": discovery.get("component", "number"),
+        "unit": discovery.get("unit", ""),
+        "min": discovery.get("min", ""),
+        "max": discovery.get("max", ""),
+        "step": discovery.get("step", ""),
+        "options": ", ".join(discovery.get("options", [])),
+    }
+
+
+@app.route("/mqtt-variables", methods=["GET", "POST"])
+def mqtt_variables_page():
+    """Eigenständige Seite (siehe README 'MQTT-Architektur'): definiert Anzeigename +
+    Home-Assistant-Discovery-Konfiguration für alle MQTT-Variablen, unabhängig davon, ob der Wert
+    aus vito.xml (Vcontrold) oder direkt von CAN stammt -- weder Bestandteil der Vcontrold- noch
+    der CAN-Einstellungen-Seite. Zyklus-Zuordnung bleibt bewusst auf der Vcontrold-Seite (siehe
+    variables_page()), Konfiguration von CAN-IDs/Sendekanälen bleibt auf der CAN-Einstellungen-
+    Seite -- hier geht es nur um die Frage 'wie heißt die Variable und wie zeigt sie sich in
+    Home Assistant'."""
+    message = None
+    message_ok = None
+    cfg = get_ui_config()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
+    mqtt_variables = mqtt_vars.load()
+
+    if request.method == "POST":
+        errors = []
+        new_variables = {}
+
+        for var_name, cmds in vito_vars.items():
+            display_name = request.form.get(f"vitovar_display_{var_name}", "").strip()
+            entry = {}
+            if display_name:
+                entry["display_name"] = display_name
+            if cmds.get("set") and request.form.get(f"vitovar_writable_{var_name}") == "1":
+                entry["discovery"] = parse_discovery_fields("vitovar", var_name, f"'{var_name}'", errors)
+            if entry:
+                new_variables[var_name] = entry
+
+        for i in range(MQTT_VARIABLE_ROWS):
+            name = request.form.get(f"customvar_name_{i}", "").strip()
+            if not name:
+                continue
+            if name in vito_vars:
+                errors.append(f"'{name}' ist bereits eine vito.xml-Variable -- oben editieren, nicht hier")
+                continue
+            entry = {}
+            display_name = request.form.get(f"customvar_display_{i}", "").strip()
+            if display_name:
+                entry["display_name"] = display_name
+            entry["discovery"] = parse_discovery_fields("customvar", i, f"'{name}'", errors)
+            new_variables[name] = entry
+
+        if errors:
+            message, message_ok = " / ".join(errors), False
+            mqtt_variables = new_variables  # editierte (fehlerhafte) Werte im Formular zeigen
+        else:
+            mqtt_vars.save(new_variables)
+            mqtt_variables = new_variables
+
+            restarted, failed = [], []
+            for service in ("orchestrator", "can-node"):
+                status = diagnostics.service_status(service)
+                if status["state"] != "active":
+                    continue
+                result = diagnostics.restart_service(service)
+                (restarted if result["ok"] else failed).append(service)
+            message = "Gespeichert."
+            if restarted:
+                message += f" Neu gestartet: {', '.join(restarted)}."
+            if failed:
+                message += f" Fehler beim Neustart von: {', '.join(failed)}."
+            message_ok = not failed
+
+    vito_rows = []
+    for var_name, cmds in sorted(vito_vars.items()):
+        entry = mqtt_variables.get(var_name, {})
+        row = build_mqtt_variable_rows(entry)
+        row["name"] = var_name
+        row["friendly_name"] = vito_variables.friendly_name(var_name)
+        row["has_setter"] = bool(cmds.get("set"))
+        vito_rows.append(row)
+
+    custom_rows = []
+    for name, entry in mqtt_variables.items():
+        if name in vito_vars:
+            continue
+        row = build_mqtt_variable_rows(entry)
+        row["name"] = name
+        custom_rows.append(row)
+    while len(custom_rows) < MQTT_VARIABLE_ROWS:
+        custom_rows.append({"name": "", "display_name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
+    custom_rows = custom_rows[:MQTT_VARIABLE_ROWS]
+
+    return render_template(
+        "mqtt_variables.html",
+        vito_rows=vito_rows,
+        custom_rows=custom_rows,
+        num_custom_rows=range(MQTT_VARIABLE_ROWS),
+        message=message,
+        message_ok=message_ok,
     )
 
 

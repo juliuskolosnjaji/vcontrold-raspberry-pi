@@ -98,7 +98,7 @@ function confirmIfSet() {
 {% endmacro %}
 
 
-{% macro mqtt_variables_config(cycle_rows, num_cycles, rows, post_action, return_to=None) %}
+{% macro cycle_assignment_config(cycle_rows, num_cycles, rows, post_action, return_to=None) %}
 {#- <form id="variables-form"> immer rendern, auch ohne Variablen -- die Zyklen-Felder im
    separaten cycles_config()-Abschnitt hängen sich per form="variables-form"-Attribut an dieses
    Formular an, unabhängig davon, ob hier Variablen-Zeilen existieren. Ohne dieses <form> wären
@@ -113,32 +113,29 @@ function confirmIfSet() {
   {% else %}
 
   <div class="card">
-    <p>MQTT-Konfiguration für vcontrold: welchem Read-Zyklus eine Variable zugeordnet ist (Zyklen
-       selbst siehe eigener Abschnitt), und ob/wie sie per MQTT/CAN setzbar ist (Home-Assistant-
-       Discovery-Metadaten inklusive). MQTT-Topic und CAN-Kanalname sind immer exakt der
-       Variablenname hier links — keine separate Umbenennung nötig. "Anzeigename in HA" ändert nur
-       den in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen
-       abgeleitet), <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben dabei unverändert.</p>
+    <p>Ordnet vito.xml-Variablen einem Read-Zyklus zu (Zyklen selbst siehe eigener Abschnitt) --
+       nur zugeordnete Variablen werden tatsächlich von der Vitotronic gelesen und als
+       <code>heizung/&lt;Name&gt;</code> published. MQTT-Topic und CAN-Kanalname sind immer exakt
+       der Variablenname hier links. Anzeigename und Home-Assistant-Konfiguration (ob/wie eine
+       Variable per MQTT/CAN setzbar ist) werden auf der eigenständigen
+       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite gepflegt.</p>
   </div>
 
   <div class="card wide-card">
     <table class="variables-table">
       <tr>
         <th>Variable</th>
-        <th>Anzeigename in HA</th>
         <th>Get</th>
         <th>Set</th>
+        <th>Settable?</th>
         <th>Zyklus</th>
-        <th colspan="4">Discovery (bei vorhandenem Setter automatisch settable)</th>
       </tr>
       {% for row in rows %}
-      <tr class="{{ 'no-set' if not row.set }}">
+      <tr>
         <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code></td>
-        <td>
-          <input type="text" name="var_display_name_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
-        </td>
         <td>{{ row['get'] or "—" }}</td>
         <td>{{ row.set or "—" }}</td>
+        <td>{{ "ja" if row.settable else "nein" }}</td>
         <td>
           <select name="var_cycle_{{ row.name }}">
             <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
@@ -147,35 +144,13 @@ function confirmIfSet() {
             {% endfor %}
           </select>
         </td>
-        {% if row.set %}
-        <td class="discovery-field">
-          <select name="var_component_{{ row.name }}">
-            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
-            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
-            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
-          </select>
-        </td>
-        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
-          <input type="text" name="var_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C">
-        </td>
-        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
-          <input type="text" name="var_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min">
-          <input type="text" name="var_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max">
-          <input type="text" name="var_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step">
-        </td>
-        <td class="discovery-field discovery-select" {% if row.component != "select" %}style="display:none"{% endif %}>
-          <input type="text" name="var_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ...">
-        </td>
-        {% else %}
-        <td colspan="4" class="no-set-cell">kein Setter in vito.xml → nicht settable</td>
-        {% endif %}
       </tr>
       {% endfor %}
     </table>
   </div>
 
   <div class="card">
-    <button type="submit" onclick="return confirm('Zyklen- und MQTT-Konfiguration speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
+    <button type="submit" onclick="return confirm('Zyklen- und Variablen-Zuordnung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
   </div>
   {% endif %}
 </form>
@@ -186,23 +161,5 @@ function confirmIfSet() {
   .variables-table th, .variables-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
   .variables-table input, .variables-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
   .variables-table td input[type=text] { min-width: 70px; }
-  .no-set-cell { color: #888; font-style: italic; }
 </style>
-
-<script>
-// Zeigt je Zeile nur die zur gewählten Discovery-Komponente (number/select) passenden Felder --
-// Switch braucht keine zusätzlichen Felder, daher weder discovery-number noch discovery-select.
-document.querySelectorAll('select[name^="var_component_"]').forEach(function (componentSelect) {
-  const row = componentSelect.closest('tr');
-
-  function update() {
-    const component = componentSelect.value;
-    row.querySelectorAll('.discovery-number').forEach(el => el.style.display = component === 'number' ? '' : 'none');
-    row.querySelectorAll('.discovery-select').forEach(el => el.style.display = component === 'select' ? '' : 'none');
-  }
-
-  componentSelect.addEventListener('change', update);
-  update();
-});
-</script>
 {% endmacro %}

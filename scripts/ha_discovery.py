@@ -15,6 +15,7 @@ Subtopics bekommen trotzdem eine Sensor-Entity, nur ohne Einheit/Icon.
 import json
 import pathlib
 
+import mqtt_variables as mqtt_vars
 import vito_variables
 from mqtt_common import sync_retained_topics
 
@@ -85,12 +86,12 @@ _display_names_cache: dict = {}
 
 
 def reload_display_names() -> None:
-    """Config/display_names.json neu einlesen -- vor jedem publish_discovery/
+    """config/mqtt_variables.json neu einlesen -- vor jedem publish_discovery/
     publish_can_discovery aufgerufen, damit UI-Änderungen nach einem Neustart
     des Diensts wirksam werden (ohne Neustart würde der alte Stand weiterlaufen,
-    genau wie bei read_cycles.json/command_map.json/can_mapping.json)."""
+    genau wie bei read_cycles.json/can_mapping.json)."""
     global _display_names_cache
-    _display_names_cache = vito_variables.load_display_names()
+    _display_names_cache = mqtt_vars.display_names(mqtt_vars.load())
 
 
 def _friendly_name(key: str) -> str:
@@ -104,7 +105,7 @@ def _unique_id(key: str, id_prefix: str = "vcontrold") -> str:
 def _sync_discovery_state(client, namespace: str, published_topics: set) -> None:
     """Löscht (leere retained Nachricht) alle Topics, die beim letzten Lauf unter diesem
     Namespace published wurden, jetzt aber nicht mehr in published_topics stehen -- z.B. weil
-    eine Variable aus vito.xml entfernt oder aus command_map.json/can_mapping.json genommen
+    eine Variable aus vito.xml entfernt oder aus mqtt_variables.json/can_mapping.json genommen
     wurde. Läuft automatisch bei jedem Dienst-Start, kein manueller Aufräumschritt nötig."""
     stale = sync_retained_topics(client, _STATE_PATH, namespace, published_topics)
     if stale:
@@ -137,8 +138,8 @@ def build_binary_sensor_config(key: str, state_topic: str, device: dict = None, 
 
 
 # Kanonischer Name -> {icon, unit, min, max, step, ...}: Vorgaben für schreibbare
-# Variablen (command_map.json), übernommen aus der früher funktionierenden statischen
-# configuration.yaml. Werden von einem gleichnamigen Feld in command_map.json's
+# Variablen (config/mqtt_variables.json), übernommen aus der früher funktionierenden statischen
+# configuration.yaml. Werden von einem gleichnamigen Feld in mqtt_variables.json's
 # "discovery"-Objekt überschrieben, falls dort explizit gesetzt.
 WRITABLE_METADATA = {
     "Neigung": {"icon": "mdi:chart-bell-curve"},
@@ -186,16 +187,19 @@ def publish_discovery(
     client,
     discovery_prefix: str,
     read_cycles: dict,
-    command_map: dict,
+    mqtt_variables: dict,
     topic_heizung: str,
     topic_cmd_heizung: str,
     known_variables: set | None = None,
 ) -> None:
-    """`known_variables` (optional): aktuell in vito.xml existierende Variablennamen. Wird
-    danach gefiltert, damit eine aus vito.xml entfernte, aber noch in read_cycles.json/
-    command_map.json referenzierte Variable nicht weiter als Entity discovered wird (sonst
-    würde sie nie als "verwaist" erkannt, weil sie ja aktiv weiter published würde -- siehe
-    README "Verwaiste Entities werden automatisch entfernt")."""
+    """`mqtt_variables` (config/mqtt_variables.json): zentrale Variablendefinition, siehe
+    scripts/mqtt_variables.py. Nur Einträge, deren Name auch in `known_variables` (aktuell in
+    vito.xml existierende Variablennamen) auftaucht, werden hier als Vcontrold-settable
+    behandelt -- Einträge für CAN-only-Variablen übernimmt stattdessen publish_can_discovery().
+    Die Filterung nach `known_variables` verhindert außerdem, dass eine aus vito.xml entfernte,
+    aber noch in read_cycles.json referenzierte Variable weiter als Entity discovered wird
+    (sonst würde sie nie als "verwaist" erkannt, weil sie ja aktiv weiter published würde --
+    siehe README "Verwaiste Entities werden automatisch entfernt")."""
     reload_display_names()
     # Alle Variablen aus den Read-Zyklen sammeln (Kandidaten für reine Sensor-Entities).
     all_subtopics = set()
@@ -207,14 +211,12 @@ def publish_discovery(
     published = set()
     published_topics = set()
 
-    # Schreibbare Datenpunkte mit expliziter Discovery-Konfiguration zuerst (number/select),
+    # Schreibbare Datenpunkte mit expliziter Discovery-Konfiguration zuerst (number/select/switch),
     # damit sie nicht zusätzlich als reiner Sensor doppelt angelegt werden.
-    for key, mapping in command_map.items():
-        if not isinstance(mapping, dict):
-            continue  # z.B. "_hinweis"-Dokumentationseintrag
+    for key, entry in mqtt_variables.items():
         if known_variables is not None and key not in known_variables:
-            continue
-        discovery_opts = mapping.get("discovery")
+            continue  # keine vito.xml-Variable -- gehört zu publish_can_discovery()
+        discovery_opts = entry.get("discovery")
         if not discovery_opts:
             continue
         component, config = build_writable_config(
@@ -244,27 +246,36 @@ def publish_discovery(
 
 
 def publish_can_discovery(
-    client, discovery_prefix: str, can_mapping: dict, topic_uvr: str, topic_cmd_uvr: str, can_variables: dict = None
+    client,
+    discovery_prefix: str,
+    can_mapping: dict,
+    topic_uvr: str,
+    topic_cmd_uvr: str,
+    mqtt_variables: dict = None,
+    known_variables: set | None = None,
 ) -> None:
     """
     Published Discovery für die CAN-Seite, unter einem eigenen Gerät "UVR16x2 (CAN)",
     getrennt vom Vitogas/vcontrold-Gerät:
 
-      - Custom CAN-Variablen aus config/can_variables.json: komplett unabhängig von
-        vito.xml, als Number/Select-Entity mit command_topic -> Home Assistant kann sie
-        direkt lesen UND schreiben, der Wert geht per CAN direkt an die UVR.
+      - Custom CAN-Variablen aus config/mqtt_variables.json, deren Name NICHT in
+        `known_variables` (vito.xml) auftaucht: komplett unabhängig von vito.xml, als
+        Number/Select/Switch-Entity mit command_topic -> Home Assistant kann sie direkt lesen
+        UND schreiben, der Wert geht per CAN direkt an die UVR. (Einträge, deren Name AUCH in
+        vito.xml existiert, übernimmt stattdessen publish_discovery() -- heizung/cmd/<Name>,
+        nicht uvr/cmd/<Name>.)
       - Alle übrigen CAN-Empfangs-Kanäle (sdo_record, rx_ta_analog_outputs,
         rx_ta_digital_outputs) als reine Sensoren -- diese haben keine Entsprechung in
         vito.xml und würden sonst nie automatisch als Home-Assistant-Entity auftauchen.
     """
     reload_display_names()
-    can_variables = can_variables or {}
+    mqtt_variables = mqtt_variables or {}
     published = set()
     published_topics = set()
 
-    for key, entry in can_variables.items():
-        if not isinstance(entry, dict):
-            continue  # z.B. "_hinweis"-Dokumentationseintrag
+    for key, entry in mqtt_variables.items():
+        if known_variables is not None and key in known_variables:
+            continue  # vito.xml-Variable -- gehört zu publish_discovery()
         discovery_opts = entry.get("discovery")
         if not discovery_opts:
             continue

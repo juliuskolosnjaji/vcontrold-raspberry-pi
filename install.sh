@@ -6,8 +6,8 @@
 # aktiviert das CAN-Overlay (Waveshare 2-CH CAN HAT+, MCP2515 über SPI1) und
 # installiert alle systemd-Dienste (vcontrold, can1-up und die Web-UI starten
 # sofort; orchestrator.service und can-node.service werden installiert, aber
-# NICHT automatisch gestartet, da sie erst config/mqtt.env, config/command_map.json,
-# config/read_cycles.json und config/can_mapping.json benötigen).
+# NICHT automatisch gestartet, da sie erst config/mqtt.env, config/read_cycles.json
+# und config/can_mapping.json benötigen).
 #
 # Ausführen als: sudo bash install.sh
 set -euo pipefail
@@ -93,19 +93,15 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> Lege Config-Dateien aus Vorlagen an (falls nicht vorhanden)"
 [[ -f "${INSTALL_DIR}/config/mqtt.env" ]] || cp "${INSTALL_DIR}/config/mqtt.env.example" "${INSTALL_DIR}/config/mqtt.env"
-[[ -f "${INSTALL_DIR}/config/command_map.json" ]] || cp "${INSTALL_DIR}/config/command_map.json.example" "${INSTALL_DIR}/config/command_map.json"
 [[ -f "${INSTALL_DIR}/config/read_cycles.json" ]] || cp "${INSTALL_DIR}/config/read_cycles.json.example" "${INSTALL_DIR}/config/read_cycles.json"
 [[ -f "${INSTALL_DIR}/config/can_mapping.json" ]] || cp "${INSTALL_DIR}/config/can_mapping.json.example" "${INSTALL_DIR}/config/can_mapping.json"
-[[ -f "${INSTALL_DIR}/config/can_variables.json" ]] || cp "${INSTALL_DIR}/config/can_variables.json.example" "${INSTALL_DIR}/config/can_variables.json"
-[[ -f "${INSTALL_DIR}/config/display_names.json" ]] || cp "${INSTALL_DIR}/config/display_names.json.example" "${INSTALL_DIR}/config/display_names.json"
+[[ -f "${INSTALL_DIR}/config/mqtt_variables.json" ]] || cp "${INSTALL_DIR}/config/mqtt_variables.json.example" "${INSTALL_DIR}/config/mqtt_variables.json"
 [[ -f "${INSTALL_DIR}/ui/ui.env" ]] || cp "${INSTALL_DIR}/ui/ui.env.example" "${INSTALL_DIR}/ui/ui.env"
 chown "${REAL_USER}:${REAL_USER}" \
   "${INSTALL_DIR}/config/mqtt.env" \
-  "${INSTALL_DIR}/config/command_map.json" \
   "${INSTALL_DIR}/config/read_cycles.json" \
   "${INSTALL_DIR}/config/can_mapping.json" \
-  "${INSTALL_DIR}/config/can_variables.json" \
-  "${INSTALL_DIR}/config/display_names.json" \
+  "${INSTALL_DIR}/config/mqtt_variables.json" \
   "${INSTALL_DIR}/ui/ui.env"
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ import tempfile
 import time
 
 import ha_discovery
+import mqtt_variables as mqtt_vars
 import vito_variables
 from mqtt_common import make_client, sync_retained_topics
 
@@ -42,7 +43,6 @@ VCLIENT_PORT = "3002"
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 READ_CYCLES_PATH = PROJECT_ROOT / "config" / "read_cycles.json"
-COMMAND_MAP_PATH = PROJECT_ROOT / "config" / "command_map.json"
 # Merkt sich, welche vito.xml-Variablen beim letzten Start bekannt waren -- damit eine seither
 # entfernte Variable nicht für immer ihren letzten (jetzt veralteten) Wert als retained MQTT-
 # Nachricht behält. Ohne das würde can_node.py diesen eingefrorenen Wert unbegrenzt weiter als
@@ -138,9 +138,7 @@ class Orchestrator:
         self.read_cycles = load_json(
             READ_CYCLES_PATH, "Kopiere config/read_cycles.json.example dorthin und passe die Zyklen an."
         )
-        self.command_map = load_json(
-            COMMAND_MAP_PATH, "Kopiere config/command_map.json.example dorthin und lege settable Variablen fest."
-        )
+        self.mqtt_variables = mqtt_vars.load()
         self.variables = vito_variables.load_variables()
         self._log_loaded_cycles()
         self.cycle_batches = self._build_cycle_batches()
@@ -205,7 +203,7 @@ class Orchestrator:
                 client,
                 self.discovery_prefix,
                 self.read_cycles,
-                self.command_map,
+                self.mqtt_variables,
                 self.topic_heizung,
                 self.topic_cmd_heizung,
                 known_variables=set(self.variables.keys()),
@@ -234,8 +232,9 @@ class Orchestrator:
         return raw, "MQTT/HA"
 
     def handle_set_request(self, key: str, payload: str, source: str) -> None:
-        if key not in self.command_map:
-            print(f"'{key}' ist nicht als settable freigegeben (fehlt in command_map.json), Quelle: {source}", file=sys.stderr)
+        entry = self.mqtt_variables.get(key)
+        if entry is None or not mqtt_vars.is_writable(entry):
+            print(f"'{key}' ist nicht als settable freigegeben (fehlt in config/mqtt_variables.json), Quelle: {source}", file=sys.stderr)
             return
 
         variable = self.variables.get(key)

@@ -1,0 +1,32 @@
+{
+  "_hinweis": "Zentrale Definition aller MQTT-Variablen (Anzeigename + Home-Assistant-Discovery). 'display_name' ist optional (ohne Eintrag wird automatisch aus dem Variablennamen abgeleitet, z.B. TempKsoll -> 'Temp Ksoll'). Ein 'discovery'-Block macht die Variable zusätzlich per MQTT/CAN schreibbar -- ob über Vcontrold (heizung/cmd/<Name>) oder direkt per CAN (uvr/cmd/<Name>) geschrieben wird, ergibt sich automatisch daraus, ob der Name auch als vito.xml-Variable mit Setter existiert. Namen, die NICHT in vito.xml vorkommen, sind reine CAN-Variablen -- die Vitotronic ist dann nicht beteiligt, der Wert geht direkt per CAN an die UVR (den Namen zusätzlich als Kanal in config/can_mapping.json eintragen, damit tatsächlich etwas über CAN läuft).",
+
+  "TempKsoll": {
+    "display_name": "Kesseltemperatur Soll"
+  },
+  "TempRaumNorSoll": {
+    "display_name": "Raumtemperatur Soll",
+    "discovery": {"component": "number", "unit": "°C", "min": 10, "max": 28, "step": 0.5}
+  },
+  "TempRaumRedSoll": {
+    "discovery": {"component": "number", "unit": "°C", "min": 5, "max": 24, "step": 0.5}
+  },
+  "TempRaumPartySoll": {
+    "discovery": {"component": "number", "unit": "°C", "min": 10, "max": 28, "step": 0.5}
+  },
+  "Betriebsart": {
+    "discovery": {"component": "select", "options": ["WW", "RED", "NORM", "H+WW", "ABSCHALT"]}
+  },
+  "BetriebSpar": {
+    "discovery": {"component": "switch"}
+  },
+  "BetriebParty": {
+    "discovery": {"component": "switch"}
+  },
+  "uvr_sollwert_kollektor": {
+    "discovery": {"component": "number", "unit": "°C", "min": 0, "max": 100, "step": 0.5}
+  },
+  "uvr_pumpe_override": {
+    "discovery": {"component": "select", "options": ["AUTO", "AN", "AUS"]}
+  }
+}

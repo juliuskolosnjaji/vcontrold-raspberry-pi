@@ -13,9 +13,10 @@ Aufgaben (siehe README Abschnitt 3):
     MQTT_TOPIC_CMD_HEIZUNG (mit {"value":..,"source":"can"} statt reinem Wert, damit der
     Orchestrator die Quelle noch von Home-Assistant-Anfragen unterscheiden kann -- MQTT
     selbst verrät den Absender nicht), falls der Kanal als beschreibbar gemappt ist.
-  - Custom CAN-Variablen (config/can_variables.json): komplett unabhängig von
-    vcontrold/vito.xml. Home Assistant kann sie direkt per MQTT (MQTT_TOPIC_CMD_UVR)
-    setzen, der Wert geht direkt per CAN an die UVR -- die Vitotronic ist nicht beteiligt.
+  - Custom CAN-Variablen (config/mqtt_variables.json, Name existiert NICHT in vito.xml):
+    komplett unabhängig von vcontrold/vito.xml. Home Assistant kann sie direkt per MQTT
+    (MQTT_TOPIC_CMD_UVR) setzen, der Wert geht direkt per CAN an die UVR -- die Vitotronic
+    ist nicht beteiligt.
   - Meldet den Pi dauerhaft per CANopen-Heartbeat als eigenen Knoten an (own_node_number),
     damit er in einer CAN-Bus-Übersicht (z.B. TA-CMI) als vorhandenes Gerät sichtbar ist
     (siehe README Abschnitt 3.3 -- Geräteerkennung selbst bleibt unvollständig, TA-eigenes
@@ -37,14 +38,15 @@ import can
 import canopen
 
 import ha_discovery
+import mqtt_variables as mqtt_vars
 import ta_can_protocol as proto
 import ta_canopen as ta
+import vito_variables
 from mqtt_common import make_client
 
 CAN_INTERFACE = "can1"
 CONFIG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 CAN_MAPPING_PATH = CONFIG_DIR / "can_mapping.json"
-CAN_VARIABLES_PATH = CONFIG_DIR / "can_variables.json"
 
 
 def _chunk4(items: list) -> list:
@@ -142,17 +144,11 @@ def load_mapping() -> dict:
     return json.loads(CAN_MAPPING_PATH.read_text())
 
 
-def load_can_variables() -> dict:
-    if not CAN_VARIABLES_PATH.exists():
-        return {}
-    return {k: v for k, v in json.loads(CAN_VARIABLES_PATH.read_text()).items() if isinstance(v, dict)}
-
-
-def resolve_numeric_value(can_variables: dict, channel: str, payload: str) -> float | None:
+def resolve_numeric_value(mqtt_variables: dict, channel: str, payload: str) -> float | None:
     """Wandelt eine eingehende MQTT-Payload in einen numerischen CAN-Wert um. Bei einer
     'select'-Variable wird die Option in ihren Index übersetzt (0, 1, 2, ...), da CAN
     nur numerische Werte kennt."""
-    discovery_opts = can_variables.get(channel, {}).get("discovery", {})
+    discovery_opts = mqtt_variables.get(channel, {}).get("discovery", {})
     if discovery_opts.get("component") == "select":
         options = discovery_opts.get("options", [])
         if payload in options:
@@ -194,7 +190,11 @@ def configure_interface(interface: str, bitrate: int) -> None:
 
 def main() -> None:
     mapping = load_mapping()
-    can_variables = load_can_variables()
+    mqtt_variables = mqtt_vars.load()
+    # Nur zur Discovery-Filterung (siehe on_connect unten): welche Namen kommen aus vito.xml,
+    # damit publish_can_discovery() vito.xml-settable Variablen nicht doppelt als CAN-Custom-
+    # Variable anlegt (die übernimmt orchestrator.py/publish_discovery() bereits).
+    known_variables = set(vito_variables.try_load_variables().keys())
     client, env = make_client("can-node")
     uvr_topic_prefix = env.get("MQTT_TOPIC_UVR", "uvr")
     uvr_cmd_topic_prefix = env.get("MQTT_TOPIC_CMD_UVR", "uvr/cmd")
@@ -307,7 +307,8 @@ def main() -> None:
         print(f"Abonniert: {topic_heizung}/+ und {uvr_cmd_topic_prefix}/#")
         if discovery_enabled:
             ha_discovery.publish_can_discovery(
-                mqtt_client, discovery_prefix, mapping, uvr_topic_prefix, uvr_cmd_topic_prefix, can_variables
+                mqtt_client, discovery_prefix, mapping, uvr_topic_prefix, uvr_cmd_topic_prefix,
+                mqtt_variables, known_variables=known_variables,
             )
             print(f"CAN-MQTT-Discovery published (Prefix: {discovery_prefix})")
 
@@ -321,7 +322,7 @@ def main() -> None:
             # send_ta_network_outputs() den letzten bekannten Wert unbegrenzt weitersenden.
             tx_values.pop(channel, None)
             return
-        value = resolve_numeric_value(can_variables, channel, payload)
+        value = resolve_numeric_value(mqtt_variables, channel, payload)
         if value is None:
             return
         tx_values[channel] = value

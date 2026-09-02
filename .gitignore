@@ -1,8 +1,7 @@
 config/mqtt.env
-config/command_map.json
 config/read_cycles.json
 config/can_mapping.json
-config/can_variables.json
+config/mqtt_variables.json
 config/.discovery_state.json
 config/.orchestrator_state.json
 ui/ui.env
