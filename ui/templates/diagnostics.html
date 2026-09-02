@@ -35,14 +35,33 @@
 </div>
 
 <script>
+// Live-Log: nach dem Klick aktualisiert sich das Log alle 3 Sekunden automatisch,
+// bis ein anderer Dienst gewählt oder das Log erneut versteckt wird.
+let logTimer = null;
+
 function loadLog(service) {
+  stopLiveLog();
+  fetchLog(service, true);
+  logTimer = setInterval(() => fetchLog(service), 3000);
+}
+
+function fetchLog(service, activate = false) {
   fetch('/diagnostics/log/' + encodeURIComponent(service))
     .then(r => r.json())
     .then(data => {
       const el = document.getElementById('log-output');
-      el.style.display = 'block';
+      if (activate) el.style.display = 'block';
       el.textContent = data.log || data.error;
+      // ans Ende scrollen, damit die neuesten Einträge sichtbar sind
+      el.scrollTop = el.scrollHeight;
     });
+}
+
+function stopLiveLog() {
+  if (logTimer) {
+    clearInterval(logTimer);
+    logTimer = null;
+  }
 }
 </script>
 {% endblock %}
