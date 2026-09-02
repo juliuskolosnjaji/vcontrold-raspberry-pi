@@ -5,12 +5,13 @@
 <h1>MQTT-Variablen</h1>
 
 <div class="card">
-  <p>Zentrale Definition aller MQTT-Variablen: Anzeigename in Home Assistant + ob/wie eine
-     Variable per MQTT setzbar ist. Unabhängig davon, ob der Wert aus vito.xml (Vcontrold) oder
-     direkt von CAN stammt -- weder Bestandteil der <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-
-     noch der <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite. Welchem
-     Lese-Zyklus eine vito.xml-Variable zugeordnet ist, bleibt auf der Vcontrold-Seite; welche
-     CAN-ID/welcher Sendekanal eine Variable nutzt, bleibt auf der CAN-Einstellungen-Seite.</p>
+  <p>Zentrale Definition aller MQTT-Variablen: für vito.xml-Variablen an einer Stelle Zyklus-
+     Zuordnung, Anzeigename in Home Assistant und ob/wie sie per MQTT setzbar ist. Unabhängig
+     davon, ob der Wert aus vito.xml (Vcontrold) oder direkt von CAN stammt -- weder Bestandteil
+     der <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>- noch der
+     <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite. Die Zyklen selbst (Name/
+     Intervall) bleiben auf der Vcontrold-Seite; welche CAN-ID/welcher Sendekanal eine Variable
+     nutzt, bleibt auf der CAN-Einstellungen-Seite.</p>
 </div>
 
 <div class="card live-refresh-row">
@@ -21,14 +22,21 @@
 <form method="post">
   <details class="config-file-block wide-block" open>
     <summary>vito.xml-Variablen</summary>
-    <p>Erscheint automatisch, sobald vito.xml einen Getter dafür hat. "Anzeigename" ändert nur den
-       in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen abgeleitet),
-       <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert. "Schreibbar" ist nur
-       wählbar, wenn vito.xml einen Setter hat -- macht die Variable per <code>heizung/cmd/&lt;Name&gt;</code>
-       setzbar (Home Assistant und/oder CAN-Weiterleitung).</p>
+    <p>Erscheint automatisch, sobald vito.xml einen Getter dafür hat. "Zyklus" legt fest, ob (und
+       wie oft) die Variable tatsächlich von der Vitotronic gelesen und als
+       <code>heizung/&lt;Name&gt;</code> published wird -- ohne Zyklus ("— keiner —") steht nie ein
+       Wert bereit. Die Zyklen selbst (Name/Intervall) werden auf der
+       <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-Seite verwaltet. "Anzeigename" ändert
+       nur den in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen
+       abgeleitet), <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert.
+       "Schreibbar" ist nur wählbar, wenn vito.xml einen Setter hat -- macht die Variable per
+       <code>heizung/cmd/&lt;Name&gt;</code> setzbar (Home Assistant und/oder CAN-Weiterleitung).</p>
     <table class="variables-table">
       <tr>
         <th>Variable</th>
+        <th>Get</th>
+        <th>Set</th>
+        <th>Zyklus</th>
         <th>Anzeigename in HA</th>
         <th>Schreibbar?</th>
         <th colspan="4">Discovery</th>
@@ -36,6 +44,16 @@
       {% for row in vito_rows %}
       <tr class="{{ 'no-set' if not row.has_setter }}">
         <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code> <span class="live-badge" data-live data-live-name="{{ row.name }}"></span></td>
+        <td>{{ row.get or "—" }}</td>
+        <td>{{ row.set or "—" }}</td>
+        <td>
+          <select name="var_cycle_{{ row.name }}">
+            <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
+            {% for i in num_cycles %}
+            <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>{{ cycle_rows[i].name or ('Zyklus ' ~ (i + 1)) }}</option>
+            {% endfor %}
+          </select>
+        </td>
         <td>
           <input type="text" name="vitovar_display_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
         </td>
@@ -220,15 +238,6 @@
   <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
 </div>
 {% endif %}
-
-<style>
-  .wide-card { max-width: none; }
-  .variables-table, .canvar-table { width: 100%; font-size: 0.85rem; }
-  .variables-table th, .variables-table td, .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
-  .variables-table input, .variables-table select, .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
-  .variables-table td input[type=text] { min-width: 70px; }
-  .no-set-cell { color: #888; font-style: italic; }
-</style>
 
 <script>
 // Discovery-Felder je Zeile nur bei aktiviertem "Schreibbar"-Häkchen aktiv/sichtbar, und

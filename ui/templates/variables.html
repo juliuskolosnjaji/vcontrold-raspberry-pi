@@ -6,9 +6,9 @@
 <h1>Variablen (aus {{ device_xml or "vito.xml (nicht konfiguriert)" }})</h1>
 <p><a href="{{ url_for('vcontrold_page') }}">→ Auch gebündelt auf der Vcontrold-Seite</a></p>
 
-{{ m.cycles_config(cycle_rows, num_cycles) }}
+{{ m.cycles_config(cycle_rows, num_cycles, post_action) }}
 
-{{ m.cycle_assignment_config(cycle_rows, num_cycles, rows, post_action) }}
+<p><a href="{{ url_for('mqtt_variables_page') }}">→ Variablen einem Zyklus zuordnen, Anzeigename und Home-Assistant-Konfiguration auf der MQTT-Variablen-Seite</a></p>
 
 {% if unassigned_commands %}
 {{ m.vito_overrides_config(unassigned_commands, raw_commands, override_rows, url_for('vito_overrides_page')) }}

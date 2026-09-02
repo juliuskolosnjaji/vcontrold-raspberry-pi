@@ -4,22 +4,6 @@
   <meta charset="utf-8">
   <title>{% block title %}vcontrold UI{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <nav>
-    <a href="{{ url_for('dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>
-    <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>
-    <a href="{{ url_for('settings') }}">MQTT-Einstellungen</a>
-    <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>
-    <a href="{{ url_for('diagnostics_page') }}">Diagnose</a>
-    <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>
-    <a href="{{ url_for('logout') }}" class="logout">Abmelden</a>
-  </nav>
-  <main class="{% block main_class %}{% endblock %}">
-    {% block content %}{% endblock %}
-  </main>
-
   <script>
     // Gemeinsamer Live-Werte-Mechanismus für alle Seiten mit CAN-/MQTT-Variablen-Tabellen: die
     // UI hält keine Dauerverbindung zum Broker, sondern holt auf Klick per /api/live-values einen
@@ -28,6 +12,9 @@
     // (fester Name, z.B. bei einer nicht editierbaren <code>-Zelle) oder, falls nicht gesetzt, aus
     // dem aktuellen .value des Elements selbst (Freitext-/Auswahlfelder) -- so werden auch per JS
     // dynamisch hinzugefügte Zeilen ("+ Zeile") automatisch mit erfasst, ohne Sonderbehandlung.
+    // Muss im head-Bereich definiert werden, vor dem content-Block -- jede Seite ruft die Funktion
+    // in einem eigenen script-Tag INNERHALB ihres content-Blocks auf, also früher im Dokument als
+    // ein script am Ende von body stünde.
     function attachLiveValues(button, container) {
       if (!button || !container) return;
 
@@ -86,5 +73,20 @@
       });
     }
   </script>
+</head>
+<body>
+  <nav>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>
+    <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>
+    <a href="{{ url_for('settings') }}">MQTT-Einstellungen</a>
+    <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>
+    <a href="{{ url_for('diagnostics_page') }}">Diagnose</a>
+    <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>
+    <a href="{{ url_for('logout') }}" class="logout">Abmelden</a>
+  </nav>
+  <main class="{% block main_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>

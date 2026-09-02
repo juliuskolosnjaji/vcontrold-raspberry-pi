@@ -59,3 +59,11 @@ main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
 .live-badge { display: inline-block; margin-left: 0.4rem; font-size: 0.8rem; font-weight: 600; color: #2e7d32; white-space: nowrap; }
 .live-badge-empty { color: #999; font-weight: 400; }
 .live-refresh-row { margin-bottom: 0.75rem; }
+
+/* Variablen-/CAN-Variablen-Tabellen (MQTT-Variablen-, Vcontrold-/Variablen-Seite) */
+.wide-card { max-width: none; }
+.variables-table, .canvar-table { width: 100%; font-size: 0.85rem; }
+.variables-table th, .variables-table td, .canvar-table th, .canvar-table td { padding: 0.4rem 0.5rem; vertical-align: top; }
+.variables-table input, .variables-table select, .canvar-table input, .canvar-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
+.variables-table td input[type=text] { min-width: 70px; }
+.no-set-cell { color: #888; font-style: italic; }

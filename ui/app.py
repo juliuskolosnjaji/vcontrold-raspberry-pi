@@ -523,39 +523,38 @@ def load_read_cycles() -> dict:
     return json.loads(READ_CYCLES_PATH.read_text())
 
 
-def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_variables: dict) -> dict:
-    """Baut cycle_rows/rows fürs Variablen-Template aus den geladenen Rohdaten -- gemeinsam
-    genutzt von variables_page() (GET) und vcontrold_page() (eingebettete Ansicht), damit beide
-    garantiert dieselbe Aufbereitung zeigen. Reine Zyklus-Zuordnung -- Anzeigename und
-    Home-Assistant-Discovery-Konfiguration werden auf der eigenständigen MQTT-Variablen-Seite
-    gepflegt (siehe mqtt_variables_page()), nicht hier."""
+def build_cycle_rows(cycles: dict) -> list:
+    """Bildet die konfigurierten Zyklen auf die CYCLE_COUNT festen Slots ab (Reihenfolge =
+    Einfüge-Reihenfolge in read_cycles.json) -- gemeinsam genutzt von allen Stellen, die Zyklen
+    anzeigen oder ihnen Variablen zuordnen (Zyklen-Seite, Variablen-Zuordnung)."""
     cycle_names = list(cycles.keys())
-    variable_cycle_index = {}
-    for idx, cname in enumerate(cycle_names):
-        for var_name in cycles[cname].get("variables", []):
-            variable_cycle_index[var_name] = idx
-
-    display_names = mqtt_vars.display_names(mqtt_variables)
-    rows = []
-    for var_name, cmds in variables.items():
-        rows.append(
-            {
-                "name": var_name,
-                "friendly_name": display_names.get(var_name) or vito_variables.friendly_name(var_name),
-                "get": cmds.get("get"),
-                "set": cmds.get("set"),
-                "cycle_index": variable_cycle_index.get(var_name),
-            }
-        )
-
     cycle_rows = []
     for i in range(CYCLE_COUNT):
         if i < len(cycle_names):
             cycle_rows.append({"name": cycle_names[i], "interval_seconds": cycles[cycle_names[i]]["interval_seconds"]})
         else:
             cycle_rows.append({"name": "", "interval_seconds": 30})
+    return cycle_rows
 
-    return {"cycle_rows": cycle_rows, "num_cycles": range(CYCLE_COUNT), "rows": rows}
+
+def build_variable_cycle_index(cycles: dict) -> dict:
+    """{Variablenname: Zyklus-Slot-Index} aus read_cycles.json -- Reihenfolge der Zyklen-Namen
+    entspricht den Slots aus build_cycle_rows()."""
+    cycle_names = list(cycles.keys())
+    variable_cycle_index = {}
+    for idx, cname in enumerate(cycle_names):
+        for var_name in cycles[cname].get("variables", []):
+            variable_cycle_index[var_name] = idx
+    return variable_cycle_index
+
+
+def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_variables: dict) -> dict:
+    """Baut cycle_rows/rows fürs Zyklen-Template aus den geladenen Rohdaten -- gemeinsam genutzt
+    von variables_page() (GET) und vcontrold_page() (eingebettete Ansicht), damit beide garantiert
+    dieselbe Aufbereitung zeigen. Get/Set/Zyklus-Zuordnung je Variable werden inzwischen auf der
+    MQTT-Variablen-Seite gepflegt (siehe mqtt_variables_page()) -- hier nur noch die
+    Zyklus-Definitionen selbst (Name/Intervall)."""
+    return {"cycle_rows": build_cycle_rows(cycles), "num_cycles": range(CYCLE_COUNT)}
 
 
 def build_vito_override_data(cfg: dict, variables: dict) -> dict:
@@ -578,7 +577,8 @@ def build_vito_override_data(cfg: dict, variables: dict) -> dict:
     }
 
 
-BLANK_OVERRIDE_ROWS = 3  # zusätzliche leere Zeilen für neue Get/Set-Overrides; "+ Zeile" ergänzt bei Bedarf mehr
+BLANK_OVERRIDE_ROWS = 0  # keine vorab gerenderten Leerzeilen mehr (führten zu versehentlich
+# gespeicherten Dummy-Einträgen) -- "+ Zeile" fügt bei Bedarf eine neue hinzu
 
 
 @app.route("/vito-overrides", methods=["POST"])
@@ -648,6 +648,16 @@ def variables_page():
     if request.method == "POST":
         errors = []
 
+        # Diese Seite bearbeitet nur Name/Intervall der Zyklen selbst -- welche Variable zu
+        # welchem Zyklus gehört, wird auf der MQTT-Variablen-Seite gepflegt (siehe
+        # mqtt_variables_page()). Die bestehende Variablen-Zuordnung je Slot-Index bleibt deshalb
+        # unverändert erhalten, statt sie (mangels entsprechender Formularfelder hier) auf leer
+        # zurückzusetzen.
+        old_cycle_rows = build_cycle_rows(cycles)
+        old_variables_by_slot = [
+            cycles.get(old_cycle_rows[i]["name"], {}).get("variables", []) for i in range(CYCLE_COUNT)
+        ]
+
         cycle_defs = []
         for i in range(CYCLE_COUNT):
             name = request.form.get(f"cycle_name_{i}", "").strip()
@@ -663,16 +673,7 @@ def variables_page():
                 errors.append(f"Zyklus {i + 1} ('{name}'): ungültiges Intervall")
                 cycle_defs.append(None)
                 continue
-            cycle_defs.append({"name": name, "interval_seconds": interval, "variables": []})
-
-        for var_name in variables:
-            cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
-            if cycle_choice:
-                idx = int(cycle_choice)
-                if cycle_defs[idx] is None:
-                    errors.append(f"'{var_name}': Zyklus {idx + 1} ist nicht definiert")
-                else:
-                    cycle_defs[idx]["variables"].append(var_name)
+            cycle_defs.append({"name": name, "interval_seconds": interval, "variables": old_variables_by_slot[i]})
 
         if errors:
             message, message_ok = " / ".join(errors), False
@@ -697,7 +698,7 @@ def variables_page():
         if request.form.get("return_to") == "vcontrold":
             if message:
                 flash(message, "message-ok" if message_ok else "message-error")
-            return redirect(url_for("vcontrold_page") + "#variablen")
+            return redirect(url_for("vcontrold_page") + "#zyklen")
 
     return render_template(
         "variables.html",
@@ -751,10 +752,11 @@ def vcontrold_page():
     )
 
 
-BLANK_CUSTOM_VARIABLE_ROWS = 3  # zusätzliche leere Zeilen für neue Custom-CAN-Variablen; "+ Zeile"
-# im Browser fügt bei Bedarf beliebig mehr hinzu (kein fixes Limit, da die Anzahl je nach
+BLANK_CUSTOM_VARIABLE_ROWS = 0  # keine vorab gerenderten Leerzeilen mehr (versehentlich als
+# Dummy-Variable gespeichert, z.B. einbuchstabige Testnamen wie "A"/"C"/"D") -- "+ Zeile" im
+# Browser fügt bei Bedarf eine neue hinzu (kein fixes Limit, da die Anzahl je nach
 # CAN-Ausbaustufe stark variieren kann)
-BLANK_MAPPING_ROWS = 3  # zusätzliche leere Zeilen für neue Set-Weiterleitungen, ebenfalls per "+ Zeile" erweiterbar
+BLANK_MAPPING_ROWS = 0  # ebenfalls keine vorab gerenderten Leerzeilen mehr, siehe oben
 
 
 def build_mqtt_variable_rows(entry: dict) -> dict:
@@ -773,18 +775,20 @@ def build_mqtt_variable_rows(entry: dict) -> dict:
 
 @app.route("/mqtt-variables", methods=["GET", "POST"])
 def mqtt_variables_page():
-    """Eigenständige Seite (siehe README 'MQTT-Architektur'): definiert Anzeigename +
-    Home-Assistant-Discovery-Konfiguration für alle MQTT-Variablen, unabhängig davon, ob der Wert
-    aus vito.xml (Vcontrold) oder direkt von CAN stammt -- weder Bestandteil der Vcontrold- noch
-    der CAN-Einstellungen-Seite. Zyklus-Zuordnung bleibt bewusst auf der Vcontrold-Seite (siehe
-    variables_page()), Konfiguration von CAN-IDs/Sendekanälen bleibt auf der CAN-Einstellungen-
-    Seite -- hier geht es nur um die Frage 'wie heißt die Variable und wie zeigt sie sich in
-    Home Assistant'."""
+    """Eigenständige Seite (siehe README 'MQTT-Architektur'): definiert für jede vito.xml-Variable
+    an einer Stelle Zyklus-Zuordnung (welcher Read-Zyklus liest sie), Anzeigename und
+    Home-Assistant-Discovery-Konfiguration (ob/wie sie per MQTT setzbar ist) -- vorher auf zwei
+    getrennte Seiten verteilt (Vcontrold-Seite für den Zyklus, hier für den Rest), was denselben
+    Variablennamen zweimal in unterschiedlichen Tabellen zeigte. Die Zyklen selbst (Name/Intervall)
+    bleiben auf der Vcontrold-Seite (siehe variables_page()), Konfiguration von CAN-IDs/
+    Sendekanälen bleibt auf der CAN-Einstellungen-Seite."""
     message = None
     message_ok = None
     cfg = get_ui_config()
     vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
     mqtt_variables = mqtt_vars.load()
+    cycles = load_read_cycles()
+    cycle_names = list(cycles.keys())
 
     if request.method == "POST":
         errors = []
@@ -799,6 +803,26 @@ def mqtt_variables_page():
                 entry["discovery"] = parse_discovery_fields("vitovar", var_name, f"'{var_name}'", errors)
             if entry:
                 new_variables[var_name] = entry
+
+        # Zyklus-Zuordnung: bestehende Zyklus-Definitionen (Name/Intervall, gepflegt auf der
+        # Vcontrold-Seite) bleiben unverändert -- hier wird pro Slot-Index nur die Liste der
+        # zugeordneten Variablen aus den var_cycle_<name>-Feldern neu aufgebaut.
+        old_cycle_rows = build_cycle_rows(cycles)
+        cycle_defs = [
+            {"name": old_cycle_rows[i]["name"], "interval_seconds": old_cycle_rows[i]["interval_seconds"], "variables": []}
+            if old_cycle_rows[i]["name"] else None
+            for i in range(CYCLE_COUNT)
+        ]
+        for var_name in vito_vars:
+            cycle_choice = request.form.get(f"var_cycle_{var_name}", "")
+            if cycle_choice:
+                idx = int(cycle_choice)
+                if cycle_defs[idx] is None:
+                    errors.append(f"'{var_name}': Zyklus {idx + 1} ist nicht definiert")
+                else:
+                    cycle_defs[idx]["variables"].append(var_name)
+        new_cycles = {c["name"]: {"interval_seconds": c["interval_seconds"], "variables": c["variables"]}
+                      for c in cycle_defs if c is not None}
 
         # Zeilenindizes kommen aus den tatsächlich übermittelten Formularfeldern, nicht aus einem
         # festen Bereich -- die Custom-CAN-Variablen-Tabelle kann im Browser per "+ Zeile" beliebig
@@ -860,6 +884,10 @@ def mqtt_variables_page():
             mqtt_vars.save(new_variables)
             mqtt_variables = new_variables
             mqtt_mapping.save(new_mappings)
+            READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            cycles = new_cycles
+            cycle_names = list(cycles.keys())
 
             restarted, failed = [], []
             for service in ("orchestrator", "can-node"):
@@ -875,6 +903,9 @@ def mqtt_variables_page():
                 message += f" Fehler beim Neustart von: {', '.join(failed)}."
             message_ok = not failed
 
+    variable_cycle_index = build_variable_cycle_index(cycles)
+    cycle_rows = build_cycle_rows(cycles)
+
     vito_rows = []
     for var_name, cmds in sorted(vito_vars.items()):
         entry = mqtt_variables.get(var_name, {})
@@ -886,7 +917,10 @@ def mqtt_variables_page():
             row["writable"] = True
         row["name"] = var_name
         row["friendly_name"] = vito_variables.friendly_name(var_name)
+        row["get"] = cmds.get("get")
+        row["set"] = cmds.get("set")
         row["has_setter"] = bool(cmds.get("set"))
+        row["cycle_index"] = variable_cycle_index.get(var_name)
         vito_rows.append(row)
 
     custom_rows = []
@@ -920,6 +954,8 @@ def mqtt_variables_page():
     return render_template(
         "mqtt_variables.html",
         vito_rows=vito_rows,
+        cycle_rows=cycle_rows,
+        num_cycles=range(CYCLE_COUNT),
         custom_rows=custom_rows,
         next_custom_index=len(custom_rows),
         mapping_rows=mapping_rows,

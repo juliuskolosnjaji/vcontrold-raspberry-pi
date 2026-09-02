@@ -632,7 +632,7 @@ statische YAML-Konfiguration, falls du kein Discovery nutzen möchtest.
 Im Ordner `ui/` liegt eine kleine Flask-App zum Testen und Verwalten.
 
 **Vcontrold-Seite** (`/vcontrold`, im Nav-Menü als „Vcontrold") bündelt alles rund um vcontrold/
-vito.xml in fünf aufklappbaren Abschnitten:
+vito.xml in aufklappbaren Abschnitten:
 
 1. **Vcontrold-Konfiguration** (`vcontrold.xml`): als Ganzes importieren (Upload) oder direkt als
    Text bearbeiten. Validiert XML vor dem Speichern, legt automatisch ein Backup an, startet
@@ -641,11 +641,12 @@ vito.xml in fünf aufklappbaren Abschnitten:
    direkt per `vclient` ausführen. Set-Befehle erfordern eine Bestätigung.
 3. **vito.xml**: derselbe Import-/Bearbeiten-Mechanismus wie Abschnitt 1, für die Kommando-
    Definitionen.
-4. **Zyklen**: Intervalle der bis zu 4 Read-Zyklen (`config/read_cycles.json`).
-5. **Variablen-Zuordnung**: alle aus `vito.xml` extrahierten Getter/Setter als Tabelle — pro
-   Variable per Dropdown einem Zyklus zuordnen. Anzeigename und Home-Assistant-Discovery-
-   Konfiguration gehören **nicht** hierher, sondern zur eigenständigen MQTT-Variablen-Seite (siehe
-   unten). Speichern startet `orchestrator` (falls aktiv) automatisch neu.
+4. **Zyklen**: nur noch Name/Intervall der bis zu 4 Read-Zyklen selbst (`config/read_cycles.json`).
+   Welche Variable zu welchem Zyklus gehört, wird direkt bei der jeweiligen Variable auf der
+   MQTT-Variablen-Seite zugeordnet (siehe unten) -- vorher standen beide an getrennter Stelle, was
+   denselben Variablennamen in zwei Tabellen zeigte.
+5. **Get/Set-Zuordnung überschreiben** (nur sichtbar, wenn vito.xml Kommandos enthält, die nicht
+   der `getXXX`/`setXXX`-Konvention folgen): diese manuell zu einer Variable zusammenführen.
 6. **Log der Kommunikation mit Vitotronic**: liest `/tmp/vcontrold.log` (per Klick oder alle 5s
    automatisch aktualisiert) — zeigt die tatsächlichen Get/Set-Kommandos samt Werten, sofern
    `-g/--debug` in `systemd/vcontrold.service` aktiv ist (Standard).
@@ -654,12 +655,14 @@ Jeder Abschnitt bleibt zusätzlich als eigenständige Seite erreichbar (`/consol
 `/variables`) — praktisch für Lesezeichen oder wenn nur ein einzelner Bereich gebraucht wird.
 
 **MQTT-Variablen-Seite** (`/mqtt-variables`, eigener Nav-Punkt, bewusst weder Teil von Vcontrold
-noch der CAN-Einstellungen): zentrale Definition aller MQTT-Variablen (`config/mqtt_variables.json`,
-siehe Abschnitt 2) -- Anzeigename in Home Assistant und ob/wie eine Variable per MQTT/CAN setzbar
-ist (Number/Select/Switch, inkl. Einheit/Min/Max/Step/Optionen). Zwei Tabellen: alle aus `vito.xml`
-extrahierten Variablen (automatisch vorgeschlagen, "Schreibbar" nur wählbar wenn vito.xml einen
-Setter hat) sowie frei anlegbare Custom-CAN-Variablen (Name existiert nicht in vito.xml, siehe
-Abschnitt 3.2). Speichern startet `orchestrator` und `can-node` (falls aktiv) automatisch neu.
+noch der CAN-Einstellungen): zentrale Definition aller MQTT-Variablen (`config/mqtt_variables.json`
+und, für vito.xml-Variablen, `config/read_cycles.json`) -- für jede aus `vito.xml` extrahierte
+Variable an einer Stelle: welcher Read-Zyklus sie liest (ohne Zyklus steht nie ein Wert bereit),
+Anzeigename in Home Assistant und ob/wie sie per MQTT/CAN setzbar ist (Number/Select/Switch, inkl.
+Einheit/Min/Max/Step/Optionen). Daneben frei anlegbare Custom-CAN-Variablen (Name existiert nicht
+in vito.xml, siehe Abschnitt 3.2) und die Set-Weiterleitung. Ein "🔄 Live-Werte aktualisieren"-
+Button zeigt per kurzem MQTT-Snapshot den aktuellen Wert neben jeder ausgefüllten Variable an.
+Speichern startet `orchestrator` und `can-node` (falls aktiv) automatisch neu.
 
 Daneben:
 
