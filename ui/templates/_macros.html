@@ -78,7 +78,7 @@ function confirmIfSet() {
 {% macro cycles_config(cycle_rows, num_cycles) %}
 <div class="card">
   <p>Wie oft welcher Read-Zyklus abgefragt wird. Welche Variable zu welchem Zyklus gehört, wird
-     unten in der MQTT-Konfiguration pro Variable zugeordnet -- die Zuordnung landet trotzdem
+     unten in der Variablen-Zuordnung pro Variable zugeordnet -- die Zuordnung landet trotzdem
      zusammen mit diesen Zyklus-Definitionen in <code>config/read_cycles.json</code> (ein
      Speichern-Klick dort, siehe unten, speichert auch die hier eingestellten Intervalle mit).</p>
   <table style="max-width: 700px;">
@@ -162,4 +162,121 @@ function confirmIfSet() {
   .variables-table input, .variables-table select { margin-bottom: 0; width: 100%; box-sizing: border-box; }
   .variables-table td input[type=text] { min-width: 70px; }
 </style>
+{% endmacro %}
+
+
+{% macro vito_overrides_config(unassigned_commands, raw_commands, override_rows, post_action, return_to=None) %}
+{#- Nur relevant, wenn vito.xml Kommandos enthält, die nicht der getXXX/setXXX-Namenskonvention
+   folgen (siehe vito_variables.load_variables()) -- der Aufrufer rendert diese Macro nur, wenn
+   unassigned_commands nicht leer ist. -#}
+<div class="card wide-card">
+  <p><strong>{{ unassigned_commands|length }} Kommando(s) in vito.xml folgen nicht der
+     get&lt;Name&gt;/set&lt;Name&gt;-Konvention</strong> und wurden deshalb NICHT automatisch zu
+     einer Variable zusammengefasst (unten aufgelistet). Falls zwei davon zusammengehören (z.B.
+     <code>getKesselTemp</code> + <code>SetKesselTempWert</code>), hier manuell als eine Variable
+     zuordnen -- das überschreibt/ergänzt die automatische Erkennung, ohne <code>vito.xml</code>
+     selbst anzufassen.</p>
+  <table style="max-width: 700px;">
+    <tr><th>Kommando</th><th>Beschreibung</th></tr>
+    {% for c in unassigned_commands %}
+    <tr><td><code>{{ c.name }}</code></td><td>{{ c.description }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<form method="post" id="vito-overrides-form" action="{{ post_action }}">
+  {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
+  <div class="card wide-card">
+    <table class="variables-table">
+      <tr><th>Kanonischer Name</th><th>Get-Kommando</th><th>Set-Kommando</th></tr>
+      <tbody id="override-tbody">
+      {% for row in override_rows %}
+      {% set i = loop.index0 %}
+      <tr>
+        <td><input type="text" name="override_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. KesselTemp"></td>
+        <td>
+          <select name="override_get_{{ i }}">
+            <option value="">— keiner —</option>
+            {% for c in raw_commands %}
+            <option value="{{ c.name }}" {% if row.get == c.name %}selected{% endif %}>{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="override_set_{{ i }}">
+            <option value="">— keiner —</option>
+            {% for c in raw_commands %}
+            <option value="{{ c.name }}" {% if row.set == c.name %}selected{% endif %}>{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+      {% for _ in range(3) %}
+      {% set i = override_rows|length + loop.index0 %}
+      <tr>
+        <td><input type="text" name="override_name_{{ i }}" value="" placeholder="z.B. KesselTemp"></td>
+        <td>
+          <select name="override_get_{{ i }}">
+            <option value="">— keiner —</option>
+            {% for c in raw_commands %}
+            <option value="{{ c.name }}">{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select name="override_set_{{ i }}">
+            <option value="">— keiner —</option>
+            {% for c in raw_commands %}
+            <option value="{{ c.name }}">{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="button" id="add-override-row">+ Zeile hinzufügen</button>
+  </div>
+  <div class="card">
+    <button type="submit" onclick="return confirm('Get/Set-Zuordnung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
+  </div>
+</form>
+
+<template id="override-row-template">
+  <tr>
+    <td><input type="text" name="override_name___IDX__" placeholder="z.B. KesselTemp"></td>
+    <td>
+      <select name="override_get___IDX__">
+        <option value="">— keiner —</option>
+        {% for c in raw_commands %}
+        <option value="{{ c.name }}">{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </td>
+    <td>
+      <select name="override_set___IDX__">
+        <option value="">— keiner —</option>
+        {% for c in raw_commands %}
+        <option value="{{ c.name }}">{{ c.name }}{% if c.description %} ({{ c.description }}){% endif %}</option>
+        {% endfor %}
+      </select>
+    </td>
+  </tr>
+</template>
+
+<script>
+(function () {
+  let nextOverrideIndex = {{ override_rows|length + 3 }};
+  document.getElementById('add-override-row').addEventListener('click', function () {
+    const template = document.getElementById('override-row-template');
+    const clone = template.content.cloneNode(true);
+    clone.querySelectorAll('[name]').forEach(function (el) {
+      el.name = el.name.replace('__IDX__', nextOverrideIndex);
+    });
+    document.getElementById('override-tbody').appendChild(clone);
+    nextOverrideIndex++;
+  });
+})();
+</script>
 {% endmacro %}

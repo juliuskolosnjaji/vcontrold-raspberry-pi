@@ -2,6 +2,7 @@ config/mqtt.env
 config/read_cycles.json
 config/can_mapping.json
 config/mqtt_variables.json
+config/vito_command_overrides.json
 config/.discovery_state.json
 config/.orchestrator_state.json
 config/.mqtt_variables_vito_state.json

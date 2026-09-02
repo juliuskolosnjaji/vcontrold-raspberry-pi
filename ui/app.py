@@ -574,6 +574,81 @@ def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_var
     return {"cycle_rows": cycle_rows, "num_cycles": range(CYCLE_COUNT), "rows": rows}
 
 
+def build_vito_override_data(cfg: dict, variables: dict) -> dict:
+    """Berechnet die Grundlage für den Abschnitt 'Get/Set-Zuordnung überschreiben': vito.xml-
+    Kommandos, die NICHT der getXXX/setXXX-Namenskonvention folgen (oder aus einem anderen Grund
+    nicht automatisch gepaart wurden) und deshalb sonst unsichtbar blieben, plus die aktuell
+    gespeicherten manuellen Overrides -- siehe vito_variables.load_variables()."""
+    raw_commands = vito_variables.try_list_raw_commands(cfg["device_xml"])
+    used_names = {cmd for entry in variables.values() for cmd in (entry.get("get"), entry.get("set")) if cmd}
+    unassigned_commands = [c for c in raw_commands if c["name"] not in used_names]
+    overrides = vito_variables.load_overrides()
+    override_rows = [
+        {"name": var_name, "get": entry.get("get") or "", "set": entry.get("set") or ""}
+        for var_name, entry in sorted(overrides.items())
+    ]
+    return {
+        "raw_commands": raw_commands,
+        "unassigned_commands": unassigned_commands,
+        "override_rows": override_rows,
+    }
+
+
+BLANK_OVERRIDE_ROWS = 3  # zusätzliche leere Zeilen für neue Get/Set-Overrides; "+ Zeile" ergänzt bei Bedarf mehr
+
+
+@app.route("/vito-overrides", methods=["POST"])
+def vito_overrides_page():
+    """Speichert manuelle Get/Set-Zuordnungen (config/vito_command_overrides.json) für vito.xml-
+    Kommandos, die nicht der getXXX/setXXX-Namenskonvention folgen -- siehe
+    vito_variables.load_variables()/build_vito_override_data(). Eingebettet in variables.html/
+    vcontrold.html, kein eigener GET-Seitenaufruf nötig."""
+    cfg = get_ui_config()
+    raw_command_names = {c["name"] for c in vito_variables.try_list_raw_commands(cfg["device_xml"])}
+    errors = []
+
+    indices = sorted(
+        int(key[len("override_name_"):])
+        for key in request.form
+        if key.startswith("override_name_") and key[len("override_name_"):].isdigit()
+    )
+    new_overrides = {}
+    for i in indices:
+        var_name = request.form.get(f"override_name_{i}", "").strip()
+        if not var_name:
+            continue
+        get_cmd = request.form.get(f"override_get_{i}", "").strip()
+        set_cmd = request.form.get(f"override_set_{i}", "").strip()
+        if not get_cmd and not set_cmd:
+            errors.append(f"'{var_name}': weder Get- noch Set-Kommando gewählt")
+            continue
+        if get_cmd and get_cmd not in raw_command_names:
+            errors.append(f"'{var_name}': Get-Kommando '{get_cmd}' existiert nicht in vito.xml")
+            continue
+        if set_cmd and set_cmd not in raw_command_names:
+            errors.append(f"'{var_name}': Set-Kommando '{set_cmd}' existiert nicht in vito.xml")
+            continue
+        new_overrides[var_name] = {"get": get_cmd or None, "set": set_cmd or None}
+
+    if errors:
+        message, message_ok = " / ".join(errors), False
+    else:
+        vito_variables.save_overrides(new_overrides)
+        restarted = []
+        status = diagnostics.service_status("orchestrator")
+        if status["state"] == "active":
+            result = diagnostics.restart_service("orchestrator")
+            if result["ok"]:
+                restarted.append("orchestrator")
+        message = "Gespeichert." + (f" Neu gestartet: {', '.join(restarted)}." if restarted else "")
+        message_ok = True
+
+    flash(message, "message-ok" if message_ok else "message-error")
+    if request.form.get("return_to") == "vcontrold":
+        return redirect(url_for("vcontrold_page") + "#variablen")
+    return redirect(url_for("variables_page"))
+
+
 @app.route("/variables", methods=["GET", "POST"])
 def variables_page():
     message = None
@@ -647,6 +722,7 @@ def variables_page():
         message_ok=message_ok,
         post_action=url_for("variables_page"),
         **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
+        **build_vito_override_data(cfg, variables),
     )
 
 
@@ -685,7 +761,9 @@ def vcontrold_page():
         post_action_config=url_for("config_page"),
         post_action_console=url_for("console"),
         post_action_variables=url_for("variables_page"),
+        post_action_vito_overrides=url_for("vito_overrides_page"),
         **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
+        **build_vito_override_data(cfg, variables),
     )
 
 

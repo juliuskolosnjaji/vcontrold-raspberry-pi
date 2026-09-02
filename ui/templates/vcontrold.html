@@ -52,6 +52,10 @@
 <details class="config-file-block" id="variablen">
   <summary>5. Variablen-Zuordnung (Zyklus je vito.xml-Variable)</summary>
   {{ m.cycle_assignment_config(cycle_rows, num_cycles, rows, post_action_variables, return_to="vcontrold") }}
+  {% if unassigned_commands %}
+  <h3>Get/Set-Zuordnung überschreiben</h3>
+  {{ m.vito_overrides_config(unassigned_commands, raw_commands, override_rows, post_action_vito_overrides, return_to="vcontrold") }}
+  {% endif %}
 </details>
 
 <details class="config-file-block" id="log">

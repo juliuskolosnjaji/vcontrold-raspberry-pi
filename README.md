@@ -134,6 +134,15 @@ vclient -h localhost -p 3002 -c "getTempAussen"
 Kleinschreibung wie in vito.xml) ist gleichzeitig der MQTT-Subtopic-Name **und** der CAN-Kanalname
 in `config/can_mapping.json` — keine zwei verschiedenen Bezeichner für dieselbe Sache mehr zu pflegen.
 
+**Falls deine vito.xml nicht der `getXXX`/`setXXX`-Konvention folgt** (z.B. `getKesselTemp` +
+`SetKesselTempWert` ohne gemeinsamen Namensrest) — kommt vor, wenn eine andere Geräte-XML als die
+mitgelieferte genutzt wird: solche Kommandopaare werden NICHT automatisch erkannt und bleiben
+unsichtbar. Auf der Vcontrold-Seite erscheint in diesem Fall automatisch ein zusätzlicher
+Abschnitt "Get/Set-Zuordnung überschreiben" (nur, wenn tatsächlich nicht zugeordnete Kommandos
+existieren), der alle unzugeordneten Kommandos auflistet und eine manuelle Zuordnung zu einem
+kanonischen Namen erlaubt — landet in `config/vito_command_overrides.json`, siehe
+`scripts/vito_variables.py`.
+
 Konfiguration am einfachsten über die Web-UI: Zyklus-Zuordnung auf der **Vcontrold**-Seite (siehe
 Abschnitt 5), Anzeigename + Home-Assistant-Discovery-Konfiguration (ob/wie eine Variable per
 MQTT/CAN setzbar ist) auf der eigenständigen **MQTT-Variablen**-Seite. Manuell geht es auch:

@@ -1,0 +1,5 @@
+{
+  "_hinweis": "Nur nötig, wenn deine vito.xml NICHT der getXXX/setXXX-Namenskonvention folgt (z.B. eine andere Geräte-XML als die mitgelieferte). Ordnet ein Get- und/oder Set-Kommando (exakt wie das name-Attribut in vito.xml) manuell einem kanonischen Variablennamen zu -- überschreibt/ergänzt die automatische Erkennung in scripts/vito_variables.py. Am einfachsten über die Web-UI pflegen (Vcontrold-Seite -> Abschnitt 'Variablen-Zuordnung' -> 'Get/Set-Zuordnung überschreiben', erscheint nur, wenn vito.xml tatsächlich nicht zugeordnete Kommandos enthält).",
+
+  "KesselTemp": {"get": "getKesselTemp", "set": "SetKesselTempWert"}
+}
