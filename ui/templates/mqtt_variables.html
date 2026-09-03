@@ -313,7 +313,7 @@ attachLiveValues(document.getElementById('refresh-live-values'), document.body);
 // blendet Zeilen aus, deren sichtbarer Text nicht zum eingegebenen Suchbegriff passt.
 document.getElementById('vitovar-filter').addEventListener('input', function () {
   const term = this.value.trim().toLowerCase();
-  document.querySelectorAll('#vitovar-table > tr:not(:first-child)').forEach(function (row) {
+  document.querySelectorAll('#vitovar-table tr:not(:first-child)').forEach(function (row) {
     row.style.display = !term || row.textContent.toLowerCase().includes(term) ? '' : 'none';
   });
 });
