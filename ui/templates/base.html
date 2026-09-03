@@ -82,7 +82,9 @@
     function removeRow(button) {
       const row = button.closest('tr');
       if (!row) return;
-      const hasData = Array.from(row.querySelectorAll('input[type=text], input[type=number], select'))
+      // Nur Text-/Number-Felder zählen als "ausgefüllt" -- ein <select> hat immer einen Wert
+      // (die erste/Standard-Option), das wäre sonst fälschlich immer "hasData".
+      const hasData = Array.from(row.querySelectorAll('input[type=text], input[type=number]'))
         .some(function (el) { return el.value && el.value.trim(); });
       if (hasData && !confirm('Diese Zeile wirklich entfernen? Wird erst beim nächsten Speichern endgültig gelöscht.')) {
         return;
