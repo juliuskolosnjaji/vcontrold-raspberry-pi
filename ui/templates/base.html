@@ -72,6 +72,23 @@
           });
       });
     }
+
+    // Entfernt die Tabellenzeile eines "+ Zeile hinzufügen"-Buttons wieder -- gilt gleichermaßen
+    // für bestehende (server-gerenderte) und per JS neu hinzugefügte Zeilen: die Zeile wird
+    // einfach aus dem DOM entfernt, ihre Felder werden dadurch beim Speichern gar nicht erst
+    // mitgesendet (siehe app.py: Zeilenindizes kommen aus den tatsächlich übermittelten
+    // Formularfeldern, keine feste Anzahl). Fragt nur nach, wenn die Zeile bereits ausgefüllt ist
+    // -- eine gerade erst leer hinzugefügte Zeile lässt sich ohne Rückfrage wieder entfernen.
+    function removeRow(button) {
+      const row = button.closest('tr');
+      if (!row) return;
+      const hasData = Array.from(row.querySelectorAll('input[type=text], input[type=number], select'))
+        .some(function (el) { return el.value && el.value.trim(); });
+      if (hasData && !confirm('Diese Zeile wirklich entfernen? Wird erst beim nächsten Speichern endgültig gelöscht.')) {
+        return;
+      }
+      row.remove();
+    }
   </script>
 </head>
 <body>

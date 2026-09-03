@@ -10,8 +10,9 @@ Eine Variable mit einem 'discovery'-Eintrag ist automatisch schreibbar. Ob sie �
 daraus, ob der Name auch als vito.xml-Variable mit Setter existiert -- siehe
 ha_discovery.publish_discovery()/publish_can_discovery() und orchestrator.py.
 """
-import json
 import pathlib
+
+import atomic_io
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "mqtt_variables.json"
 # Merkt sich, welche Namen beim letzten Aufruf von prune_removed_vito_variables() noch als
@@ -25,14 +26,11 @@ WRITABLE_COMPONENTS = ("number", "select", "switch")
 
 
 def load(path: pathlib.Path = CONFIG_PATH) -> dict:
-    if not path.exists():
-        return {}
-    return {k: v for k, v in json.loads(path.read_text()).items() if isinstance(v, dict)}
+    return {k: v for k, v in atomic_io.load_json(path, {}).items() if isinstance(v, dict)}
 
 
 def save(variables: dict, path: pathlib.Path = CONFIG_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(variables, indent=2, ensure_ascii=False) + "\n")
+    atomic_io.write_json(path, variables)
 
 
 def is_writable(entry: dict) -> bool:
@@ -54,12 +52,7 @@ def prune_removed_vito_variables(current_vito_names: set) -> set:
     orchestrator.py bei jedem Start/Reconnect aufgerufen (dieselbe Stelle wie die bestehende
     Aufräumlogik für retained heizung/<var>-Werte, siehe README "Verwaiste Entities werden
     automatisch entfernt"). Gibt die entfernten Namen zurück, damit der Aufrufer das loggen kann."""
-    previous = set()
-    if _VITO_STATE_PATH.exists():
-        try:
-            previous = set(json.loads(_VITO_STATE_PATH.read_text()))
-        except (json.JSONDecodeError, OSError):
-            previous = set()
+    previous = set(atomic_io.load_json(_VITO_STATE_PATH, []))
 
     stale = previous - current_vito_names
     variables = load()
@@ -69,6 +62,5 @@ def prune_removed_vito_variables(current_vito_names: set) -> set:
             del variables[name]
         save(variables)
 
-    _VITO_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _VITO_STATE_PATH.write_text(json.dumps(sorted(current_vito_names), ensure_ascii=False))
+    atomic_io.write_json(_VITO_STATE_PATH, sorted(current_vito_names))
     return removed

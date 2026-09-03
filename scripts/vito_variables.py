@@ -16,10 +16,11 @@ Namensrest verwenden). Für solche Fälle siehe load_overrides()/config/vito_com
 eine manuelle {kanonischer_name: {"get": "<Kommandoname>", "set": "<Kommandoname>"}}-Zuordnung,
 die die automatische Erkennung für die dort genannten Kommandos ersetzt.
 """
-import json
 import pathlib
 import re
 import xml.etree.ElementTree as ET
+
+import atomic_io
 
 DEFAULT_VITO_XML_PATH = "/etc/vcontrold/vito.xml"
 _COMMAND_NAME_PATTERN = re.compile(r"^(get|set)([A-Za-z0-9_]+)$")
@@ -28,14 +29,11 @@ OVERRIDES_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "vi
 
 
 def load_overrides(path: pathlib.Path = OVERRIDES_PATH) -> dict:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text())
+    return atomic_io.load_json(path, {})
 
 
 def save_overrides(overrides: dict, path: pathlib.Path = OVERRIDES_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(overrides, indent=2, ensure_ascii=False) + "\n")
+    atomic_io.write_json(path, overrides)
 
 
 def list_raw_commands(path: str = DEFAULT_VITO_XML_PATH) -> list:

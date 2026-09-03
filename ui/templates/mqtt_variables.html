@@ -31,7 +31,8 @@
        abgeleitet), <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert.
        "Schreibbar" ist nur wählbar, wenn vito.xml einen Setter hat -- macht die Variable per
        <code>heizung/cmd/&lt;Name&gt;</code> setzbar (Home Assistant und/oder CAN-Weiterleitung).</p>
-    <table class="variables-table">
+    <input type="text" id="vitovar-filter" placeholder="🔍 Filtern nach Name…" style="max-width:300px;">
+    <table class="variables-table" id="vitovar-table">
       <tr>
         <th>Variable</th>
         <th>Get</th>
@@ -104,6 +105,7 @@
         <th>Einheit</th>
         <th>Min/Max/Step</th>
         <th>Optionen (bei Select)</th>
+        <th></th>
       </tr>
       <tbody id="customvar-tbody">
       {% for row in custom_rows %}
@@ -129,6 +131,7 @@
         <td class="canvar-select" {% if row.component != "select" %}style="display:none"{% endif %}>
           <input type="text" name="customvar_options_{{ i }}" value="{{ row.options }}" placeholder="AUTO, AN, AUS">
         </td>
+        <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -158,6 +161,7 @@
       <td class="canvar-select" style="display:none">
         <input type="text" name="customvar_options___IDX__" placeholder="AUTO, AN, AUS">
       </td>
+      <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
     </tr>
   </template>
 
@@ -180,7 +184,7 @@
        hier ausschließlich Vitotronic-Parameter, die oben als "Schreibbar" aktiviert sind -- ein
        CAN-Ziel würde hier ohnehin nie tatsächlich am CAN-Bus ankommen.</p>
     <table class="canvar-table">
-      <tr><th>Quelle (beliebige MQTT-Variable)</th><th></th><th>Ziel (Vitotronic-Parameter setzen)</th></tr>
+      <tr><th>Quelle (beliebige MQTT-Variable)</th><th></th><th>Ziel (Vitotronic-Parameter setzen)</th><th></th></tr>
       <tbody id="mapping-tbody">
       {% for row in mapping_rows %}
       {% set i = loop.index0 %}
@@ -195,6 +199,7 @@
             {% endfor %}
           </select>
         </td>
+        <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -225,6 +230,7 @@
           {% endfor %}
         </select>
       </td>
+      <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
     </tr>
   </template>
 
@@ -302,5 +308,14 @@ document.getElementById('add-mapping-row').addEventListener('click', function ()
 });
 
 attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+
+// Filter für die vito.xml-Variablen-Tabelle (kann je nach Geräte-XML weit über 50 Zeilen haben) --
+// blendet Zeilen aus, deren sichtbarer Text nicht zum eingegebenen Suchbegriff passt.
+document.getElementById('vitovar-filter').addEventListener('input', function () {
+  const term = this.value.trim().toLowerCase();
+  document.querySelectorAll('#vitovar-table > tr:not(:first-child)').forEach(function (row) {
+    row.style.display = !term || row.textContent.toLowerCase().includes(term) ? '' : 'none';
+  });
+});
 </script>
 {% endblock %}

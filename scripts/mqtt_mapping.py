@@ -16,21 +16,19 @@ per CAN gesendet, wenn <name> zusätzlich in der "TA-Netzwerkausgänge senden"-T
 (can_mapping.json/ta_network_outputs) steht -- für "Vcontrold-Wert -> CAN" ist diese Tabelle
 bereits der vollständige, alleinige Weg, ein zusätzliches Mapping dorthin wäre wirkungslos.
 """
-import json
 import pathlib
+
+import atomic_io
 
 CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "mqtt_mapping.json"
 
 
 def load(path: pathlib.Path = CONFIG_PATH) -> list:
-    if not path.exists():
-        return []
     return [
-        m for m in json.loads(path.read_text())
+        m for m in atomic_io.load_json(path, [])
         if isinstance(m, dict) and m.get("source") and m.get("target")
     ]
 
 
 def save(mappings: list, path: pathlib.Path = CONFIG_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(mappings, indent=2, ensure_ascii=False) + "\n")
+    atomic_io.write_json(path, mappings)

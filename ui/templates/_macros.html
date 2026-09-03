@@ -129,7 +129,7 @@ function confirmIfSet() {
       <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jedem ausgefüllten Namen (kurzer Snapshot, keine Dauerverbindung).</span>
     </div>
     <table class="variables-table">
-      <tr><th>Kanonischer Name</th><th>Get-Kommando</th><th>Set-Kommando</th></tr>
+      <tr><th>Kanonischer Name</th><th>Get-Kommando</th><th>Set-Kommando</th><th></th></tr>
       <tbody id="override-tbody">
       {% for row in override_rows %}
       {% set i = loop.index0 %}
@@ -151,6 +151,7 @@ function confirmIfSet() {
             {% endfor %}
           </select>
         </td>
+        <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -181,6 +182,7 @@ function confirmIfSet() {
         {% endfor %}
       </select>
     </td>
+    <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
   </tr>
 </template>
 

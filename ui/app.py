@@ -10,7 +10,6 @@ Login (Session-Cookie, Credentials siehe ui.env) und nicht ungeschützt im Inter
 exponieren.
 """
 import datetime
-import json
 import os
 import pathlib
 import shutil
@@ -24,6 +23,7 @@ from werkzeug.utils import secure_filename
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 
+import atomic_io
 import can_sniffer
 import diagnostics
 import ha_discovery
@@ -280,7 +280,7 @@ MQTT_DEPENDENT_SERVICES = [
 
 def write_env(path: pathlib.Path, values: dict) -> None:
     lines = [f"{key}={value}" for key, value in values.items()]
-    path.write_text("\n".join(lines) + "\n")
+    atomic_io.write_text(path, "\n".join(lines) + "\n")
 
 
 def backup_and_write(target: pathlib.Path, content: str) -> None:
@@ -289,8 +289,7 @@ def backup_and_write(target: pathlib.Path, content: str) -> None:
             target.suffix + f".bak.{datetime.datetime.now():%Y%m%d%H%M%S}"
         )
         shutil.copy2(target, backup)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content)
+    atomic_io.write_text(target, content)
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -312,7 +311,6 @@ def settings():
                     break
                 new_values[key] = value
             else:
-                MQTT_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
                 write_env(MQTT_ENV_PATH, new_values)
                 current = new_values
 
@@ -357,9 +355,7 @@ def settings():
 
 
 def load_can_mapping() -> dict:
-    if not CAN_MAPPING_PATH.exists():
-        return {"bitrate": proto.DEFAULT_BITRATE, "own_node_number": 1}
-    return json.loads(CAN_MAPPING_PATH.read_text())
+    return atomic_io.load_json(CAN_MAPPING_PATH, {"bitrate": proto.DEFAULT_BITRATE, "own_node_number": 1})
 
 
 TA_NETWORK_OUTPUT_SLOTS = 16  # TA-Netzwerkausgänge (bestätigtes Schema, siehe ta_canopen.py)
@@ -455,11 +451,10 @@ def can_settings():
             new_mapping["ta_network_outputs"] = {"analog": ta_net_analog, "digital": ta_net_digital}
 
         if errors:
-            message, message_ok = " / ".join(errors), False
+            message, message_ok = "\n".join(errors), False
             mapping = new_mapping  # editierte (fehlerhafte) Werte im Formular zeigen
         else:
-            CAN_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
-            CAN_MAPPING_PATH.write_text(json.dumps(new_mapping, indent=2, ensure_ascii=False) + "\n")
+            atomic_io.write_json(CAN_MAPPING_PATH, new_mapping)
             mapping = new_mapping
 
             status = diagnostics.service_status("can-node")
@@ -518,9 +513,7 @@ CYCLE_COUNT = 4  # feste Anzahl konfigurierbarer Zyklen
 
 
 def load_read_cycles() -> dict:
-    if not READ_CYCLES_PATH.exists():
-        return {}
-    return json.loads(READ_CYCLES_PATH.read_text())
+    return atomic_io.load_json(READ_CYCLES_PATH, {})
 
 
 def build_cycle_rows(cycles: dict) -> list:
@@ -612,10 +605,13 @@ def vito_overrides_page():
         if set_cmd and set_cmd not in raw_command_names:
             errors.append(f"'{var_name}': Set-Kommando '{set_cmd}' existiert nicht in vito.xml")
             continue
+        if var_name in new_overrides:
+            errors.append(f"'{var_name}' ist mehrfach angelegt -- Namen müssen eindeutig sein")
+            continue
         new_overrides[var_name] = {"get": get_cmd or None, "set": set_cmd or None}
 
     if errors:
-        message, message_ok = " / ".join(errors), False
+        message, message_ok = "\n".join(errors), False
     else:
         vito_variables.save_overrides(new_overrides)
         restarted = []
@@ -676,12 +672,11 @@ def variables_page():
             cycle_defs.append({"name": name, "interval_seconds": interval, "variables": old_variables_by_slot[i]})
 
         if errors:
-            message, message_ok = " / ".join(errors), False
+            message, message_ok = "\n".join(errors), False
         else:
             new_cycles = {c["name"]: {"interval_seconds": c["interval_seconds"], "variables": c["variables"]}
                           for c in cycle_defs if c is not None}
-            READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            atomic_io.write_json(READ_CYCLES_PATH, new_cycles)
             cycles = new_cycles
             cycle_names = list(cycles.keys())
 
@@ -832,6 +827,7 @@ def mqtt_variables_page():
             for key in request.form
             if key.startswith("customvar_name_") and key[len("customvar_name_"):].isdigit()
         )
+        seen_customvar_names = set()
         for i in customvar_indices:
             name = request.form.get(f"customvar_name_{i}", "").strip()
             if not name:
@@ -839,6 +835,10 @@ def mqtt_variables_page():
             if name in vito_vars:
                 errors.append(f"'{name}' ist bereits eine vito.xml-Variable -- oben editieren, nicht hier")
                 continue
+            if name in seen_customvar_names:
+                errors.append(f"'{name}' ist mehrfach als Custom-CAN-Variable angelegt -- Namen müssen eindeutig sein")
+                continue
+            seen_customvar_names.add(name)
             entry = {}
             display_name = request.form.get(f"customvar_display_{i}", "").strip()
             if display_name:
@@ -861,6 +861,7 @@ def mqtt_variables_page():
             if key.startswith("mapping_source_") and key[len("mapping_source_"):].isdigit()
         )
         new_mappings = []
+        seen_mapping_pairs = set()
         for i in mapping_indices:
             source = request.form.get(f"mapping_source_{i}", "").strip()
             target = request.form.get(f"mapping_target_{i}", "").strip()
@@ -875,17 +876,20 @@ def mqtt_variables_page():
             if target not in settable_targets:
                 errors.append(f"Mapping-Zeile {i + 1}: '{target}' ist keine schreibbare Vcontrold-Variable (oben zuerst als 'Schreibbar' aktivieren)")
                 continue
+            if (source, target) in seen_mapping_pairs:
+                errors.append(f"Mapping-Zeile {i + 1}: '{source}' -> '{target}' ist bereits als Set-Weiterleitung angelegt (doppelt)")
+                continue
+            seen_mapping_pairs.add((source, target))
             new_mappings.append({"source": source, "target": target})
 
         if errors:
-            message, message_ok = " / ".join(errors), False
+            message, message_ok = "\n".join(errors), False
             mqtt_variables = new_variables  # editierte (fehlerhafte) Werte im Formular zeigen
         else:
             mqtt_vars.save(new_variables)
             mqtt_variables = new_variables
             mqtt_mapping.save(new_mappings)
-            READ_CYCLES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            READ_CYCLES_PATH.write_text(json.dumps(new_cycles, indent=2, ensure_ascii=False) + "\n")
+            atomic_io.write_json(READ_CYCLES_PATH, new_cycles)
             cycles = new_cycles
             cycle_names = list(cycles.keys())
 
