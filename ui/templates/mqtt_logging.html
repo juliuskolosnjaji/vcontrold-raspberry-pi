@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}MQTT: Logging - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>MQTT: Logging</h1>
+
+<div class="section-layout">
+  {{ m.mqtt_section_nav('logging') }}
+  <div class="section-content">
+
+    <div class="card">
+      <h2>MQTT-Verbindung</h2>
+      {% if mqtt_status %}
+      <p class="{{ 'message-ok' if mqtt_status.ok else 'message-error' }}">
+        {{ 'Verbunden' if mqtt_status.ok else 'Fehler' }} ({{ mqtt_status.detail }})
+      </p>
+      {% else %}
+      <p>config/mqtt.env nicht gefunden — siehe README.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <p>Logs der beiden MQTT-sprechenden Daemons -- vcontrold selbst spricht kein MQTT (dessen
+         Log liegt auf der <a href="{{ url_for('vitotronic_logging_page') }}">Vitotronic-Logging</a>-Seite).</p>
+      <button type="button" onclick="loadLog('orchestrator')">orchestrator-Log anzeigen</button>
+      <button type="button" onclick="loadLog('can-node')">can-node-Log anzeigen</button>
+      <pre id="log-output" style="display:none;"></pre>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  #log-output { max-height: 500px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
+</style>
+
+<script>
+function loadLog(service) {
+  fetch('/diagnostics/log/' + encodeURIComponent(service))
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('log-output');
+      el.style.display = 'block';
+      el.textContent = data.log || data.error;
+      el.scrollTop = el.scrollHeight;
+    });
+}
+</script>
+{% endblock %}

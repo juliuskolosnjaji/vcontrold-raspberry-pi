@@ -11,7 +11,7 @@
      CAN-IDs sind erst nach dem <a href="{{ url_for('can_sniffer_page') }}">CAN-Sniffer</a>-Vorgehen
      bekannt, bis dahin einfach leer lassen. Neue schreibbare CAN-Variablen (unabhängig von
      vito.xml, Home Assistant ↔ UVR ohne Vitotronic) legst du auf der eigenständigen
-     <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite an -- hier trägst du
+     <a href="{{ url_for('mqtt_home_assistant_page') }}">MQTT &gt; Home Assistant</a>-Seite an -- hier trägst du
      den Namen dann nur noch als Kanal ein.</p>
 </div>
 
@@ -55,7 +55,7 @@
        ermitteln. Kanalname per Dropdown aus bestehenden Variablen wählen oder frei eintippen
        (legt bei Bedarf eine neue MQTT-Variable an). Digital published <code>"ON"</code>/<code>"OFF"</code>.
        Soll ein Wert zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, auf der
-       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite unter
+       <a href="{{ url_for('mqtt_vitotronic_page') }}">MQTT &gt; Vitotronic</a>-Seite unter
        "Set-Weiterleitung" einrichten.</p>
     <div class="can-id-row">
       <label for="rx_ta_analog_can_id">CAN-ID Analog (gemeinsam für alle Ausgänge)</label>
@@ -102,7 +102,7 @@
        ein Name, der hier steht, wird automatisch bei jeder Änderung gesendet, ohne dass an
        anderer Stelle noch etwas konfiguriert werden muss. Für die Gegenrichtung (ein von der UVR
        empfangener Wert soll einen echten Set-Befehl in der Vitotronic auslösen) siehe
-       <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a> → "Set-Weiterleitung".</p>
+       <a href="{{ url_for('mqtt_vitotronic_page') }}">MQTT &gt; Vitotronic</a> → "Set-Weiterleitung".</p>
     <table class="canvar-table">
       <tr><th>Ausgang</th><th>Analog: heizung/…</th><th>Digital: heizung/…</th></tr>
       {% for i in range(total_slots) %}

@@ -280,68 +280,6 @@ def backup_and_write(target: pathlib.Path, content: str) -> None:
     atomic_io.write_text(target, content)
 
 
-@app.route("/settings", methods=["GET", "POST"])
-def settings():
-    message = None
-    message_ok = None
-    test_result = None
-    current = load_env(MQTT_ENV_PATH)
-
-    if request.method == "POST":
-        action = request.form.get("action", "save")
-
-        if action == "save":
-            new_values = dict(current)
-            for key, _label, required in MQTT_FIELDS:
-                value = request.form.get(key, "").strip()
-                if required and not value:
-                    message, message_ok = f"Feld '{key}' darf nicht leer sein.", False
-                    break
-                new_values[key] = value
-            else:
-                write_env(MQTT_ENV_PATH, new_values)
-                current = new_values
-
-                restarted, failed = [], []
-                for service in MQTT_DEPENDENT_SERVICES:
-                    status = diagnostics.service_status(service)
-                    if status["state"] not in ("active",):
-                        continue  # nur laufende Dienste neu starten, nicht versehentlich welche aktivieren
-                    result = diagnostics.restart_service(service)
-                    (restarted if result["ok"] else failed).append(service)
-
-                message = "MQTT-Konfiguration gespeichert."
-                if restarted:
-                    message += f" Neu gestartet: {', '.join(restarted)}."
-                if failed:
-                    message += f" Fehler beim Neustart von: {', '.join(failed)}."
-                message_ok = not failed
-
-        elif action == "test":
-            new_values = dict(current)
-            for key, _label, _required in MQTT_FIELDS:
-                new_values[key] = request.form.get(key, "").strip()
-            if new_values.get("MQTT_HOST"):
-                test_result = diagnostics.mqtt_connectivity(
-                    new_values["MQTT_HOST"],
-                    int(new_values.get("MQTT_PORT") or 1883),
-                    new_values.get("MQTT_USERNAME") or None,
-                    new_values.get("MQTT_PASSWORD") or None,
-                )
-            else:
-                test_result = {"ok": False, "detail": "Kein Broker-Host angegeben."}
-            current = new_values
-
-    return render_template(
-        "settings.html",
-        fields=MQTT_FIELDS,
-        current=current,
-        message=message,
-        message_ok=message_ok,
-        test_result=test_result,
-    )
-
-
 def load_can_mapping() -> dict:
     return atomic_io.load_json(CAN_MAPPING_PATH, {"bitrate": proto.DEFAULT_BITRATE, "own_node_number": 1})
 
@@ -681,13 +619,6 @@ def vcontrold_page():
     return redirect(url_for("vitotronic_variablen_page"))
 
 
-BLANK_CUSTOM_VARIABLE_ROWS = 0  # keine vorab gerenderten Leerzeilen mehr (versehentlich als
-# Dummy-Variable gespeichert, z.B. einbuchstabige Testnamen wie "A"/"C"/"D") -- "+ Zeile" im
-# Browser fügt bei Bedarf eine neue hinzu (kein fixes Limit, da die Anzahl je nach
-# CAN-Ausbaustufe stark variieren kann)
-BLANK_MAPPING_ROWS = 0  # ebenfalls keine vorab gerenderten Leerzeilen mehr, siehe oben
-
-
 def build_mqtt_variable_rows(entry: dict) -> dict:
     discovery = entry.get("discovery", {})
     return {
@@ -815,59 +746,148 @@ def vitotronic_logging_page():
     return render_template("vitotronic_logging.html")
 
 
-@app.route("/mqtt-variables", methods=["GET", "POST"])
+@app.route("/mqtt-variables")
 def mqtt_variables_page():
-    """Eigenständige Seite (siehe README 'MQTT-Architektur'): Custom-CAN-Variablen (Name nicht in
-    vito.xml, Home Assistant <-> UVR ohne Vitotronic) und Set-Weiterleitung. Zyklus-Zuordnung,
-    Anzeigename und Home-Assistant-Konfiguration für vito.xml-Variablen liegen auf der
-    eigenständigen Vitotronic-Seite (siehe vitotronic_variablen_page()); Konfiguration von
-    CAN-IDs/Sendekanälen bleibt auf der CAN-Einstellungen-Seite."""
+    """Abgelöst durch den MQTT-Bereich mit eigener Seitenleiste (Home Assistant/Vitotronic/
+    Configuration/Logging, siehe mqtt_section_nav()-Makro) -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("mqtt_home_assistant_page"))
+
+
+@app.route("/mqtt")
+def mqtt_index():
+    return redirect(url_for("mqtt_home_assistant_page"))
+
+
+CUSTOMVAR_GROUPS = ("number", "select", "switch")  # Reihenfolge = Reihenfolge der Tabellen im Template
+
+
+def parse_customvar_group(component: str, vito_vars: dict, seen_names: set, errors: list) -> dict:
+    """Parst eine der drei Custom-CAN-Variablen-Tabellen (Number/Select/Switch, siehe
+    CUSTOMVAR_GROUPS) aus den Formularfeldern 'customvar_<component>_name_<i>' usw. `seen_names`
+    wird gruppenübergreifend übergeben, damit derselbe Name nicht in zwei verschiedenen Tabellen
+    (z.B. einmal als Number, einmal als Switch) angelegt werden kann."""
+    prefix = f"customvar_{component}_name_"
+    indices = sorted(
+        int(key[len(prefix):])
+        for key in request.form
+        if key.startswith(prefix) and key[len(prefix):].isdigit()
+    )
+    entries = {}
+    for i in indices:
+        name = request.form.get(f"customvar_{component}_name_{i}", "").strip()
+        if not name:
+            continue
+        if name in vito_vars:
+            errors.append(f"'{name}' ist bereits eine vito.xml-Variable -- auf der Vitotronic-Seite editieren, nicht hier")
+            continue
+        if name in seen_names:
+            errors.append(f"'{name}' ist mehrfach als Custom-CAN-Variable angelegt -- Namen müssen eindeutig sein")
+            continue
+        seen_names.add(name)
+        entry = {}
+        display_name = request.form.get(f"customvar_{component}_display_{i}", "").strip()
+        if display_name:
+            entry["display_name"] = display_name
+        discovery = {"component": component}
+        if component == "number":
+            unit = request.form.get(f"customvar_{component}_unit_{i}", "").strip()
+            if unit:
+                discovery["unit"] = unit
+            for field in ("min", "max", "step"):
+                raw = request.form.get(f"customvar_{component}_{field}_{i}", "").strip()
+                if raw:
+                    try:
+                        discovery[field] = float(raw) if "." in raw else int(raw)
+                    except ValueError:
+                        errors.append(f"'{name}': ungültiger Wert für {field}")
+        elif component == "select":
+            options_raw = request.form.get(f"customvar_{component}_options_{i}", "").strip()
+            discovery["options"] = [o.strip() for o in options_raw.split(",") if o.strip()]
+        entry["discovery"] = discovery
+        entries[name] = entry
+    return entries
+
+
+@app.route("/mqtt/home-assistant", methods=["GET", "POST"])
+def mqtt_home_assistant_page():
+    """MQTT-Bereich, Unterseite 'Home Assistant': Custom-CAN-Variablen (Name nicht in vito.xml,
+    Home Assistant <-> UVR ohne Vitotronic), nach Typ gruppiert (Number/Select/Switch) statt einer
+    Tabelle mit Typ-Dropdown -- Zyklus-Zuordnung, Anzeigename und Home-Assistant-Konfiguration für
+    vito.xml-Variablen liegen auf der eigenständigen Vitotronic-Seite (siehe
+    vitotronic_variablen_page())."""
     message = None
     message_ok = None
     cfg = get_ui_config()
-    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])
     mqtt_variables = mqtt_vars.load()
 
     if request.method == "POST":
         errors = []
+        seen_names = set()
+        new_customvars = {}
+        for component in CUSTOMVAR_GROUPS:
+            new_customvars.update(parse_customvar_group(component, vito_vars, seen_names, errors))
+
         new_variables = {k: v for k, v in mqtt_variables.items() if k in vito_vars}  # unverändert übernehmen
+        new_variables.update(new_customvars)
 
-        # Zeilenindizes kommen aus den tatsächlich übermittelten Formularfeldern, nicht aus einem
-        # festen Bereich -- die Custom-CAN-Variablen-Tabelle kann im Browser per "+ Zeile" beliebig
-        # viele zusätzliche Zeilen bekommen (kein serverseitiges Limit).
-        customvar_indices = sorted(
-            int(key[len("customvar_name_"):])
-            for key in request.form
-            if key.startswith("customvar_name_") and key[len("customvar_name_"):].isdigit()
-        )
-        seen_customvar_names = set()
-        for i in customvar_indices:
-            name = request.form.get(f"customvar_name_{i}", "").strip()
-            if not name:
-                continue
-            if name in vito_vars:
-                errors.append(f"'{name}' ist bereits eine vito.xml-Variable -- oben editieren, nicht hier")
-                continue
-            if name in seen_customvar_names:
-                errors.append(f"'{name}' ist mehrfach als Custom-CAN-Variable angelegt -- Namen müssen eindeutig sein")
-                continue
-            seen_customvar_names.add(name)
-            entry = {}
-            display_name = request.form.get(f"customvar_display_{i}", "").strip()
-            if display_name:
-                entry["display_name"] = display_name
-            entry["discovery"] = parse_discovery_fields("customvar", i, f"'{name}'", errors)
-            new_variables[name] = entry
+        if errors:
+            message, message_ok = "\n".join(errors), False
+            mqtt_variables = new_variables  # editierte (fehlerhafte) Werte im Formular zeigen
+        else:
+            mqtt_vars.save(new_variables)
+            mqtt_variables = new_variables
 
-        # Ziel-Auswahl bewusst auf tatsächlich schreibbare Vcontrold-Variablen beschränkt (siehe
-        # available_set_keys unten): ein Mapping-Ziel, das eine CAN-Variable ist, würde nie
-        # tatsächlich am CAN-Bus ankommen (can_node.py sendet nur, was zusätzlich in der
-        # "TA-Netzwerkausgänge senden"-Tabelle steht) -- so eine wirkungslose, aber gültig
-        # aussehende Konfiguration soll gar nicht erst eingebbar sein. Verwendet new_variables
-        # (den gerade abgeschickten Stand), damit eine im selben Speichern-Klick aktivierte
-        # Set-Variable sofort als gültiges Ziel zählt.
-        settable_targets = {k for k, v in new_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)}
+            restarted, failed = [], []
+            for service in ("orchestrator", "can-node"):
+                status = diagnostics.service_status(service)
+                if status["state"] != "active":
+                    continue
+                result = diagnostics.restart_service(service)
+                (restarted if result["ok"] else failed).append(service)
+            message = "Gespeichert."
+            if restarted:
+                message += f" Neu gestartet: {', '.join(restarted)}."
+            if failed:
+                message += f" Fehler beim Neustart von: {', '.join(failed)}."
+            message_ok = not failed
 
+    rows_by_component = {component: [] for component in CUSTOMVAR_GROUPS}
+    for name, entry in sorted(mqtt_variables.items()):
+        if name in vito_vars:
+            continue
+        row = build_mqtt_variable_rows(entry)
+        row["name"] = name
+        rows_by_component.setdefault(row["component"], []).append(row)
+
+    return render_template(
+        "mqtt_home_assistant.html",
+        number_rows=rows_by_component["number"],
+        select_rows=rows_by_component["select"],
+        switch_rows=rows_by_component["switch"],
+        message=message,
+        message_ok=message_ok,
+    )
+
+
+@app.route("/mqtt/vitotronic", methods=["GET", "POST"])
+def mqtt_vitotronic_page():
+    """MQTT-Bereich, Unterseite 'Vitotronic': Set-Weiterleitung (ein beliebiger MQTT-Wert löst
+    einen echten Set-Befehl in der Vitotronic aus). Custom-CAN-Variablen liegen auf der
+    eigenständigen 'Home Assistant'-Unterseite (siehe mqtt_home_assistant_page())."""
+    message = None
+    message_ok = None
+    cfg = get_ui_config()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])
+    mqtt_variables = mqtt_vars.load()
+
+    # "Ziel" ist bewusst auf tatsächlich schreibbare Vcontrold-Variablen beschränkt -- ein
+    # Mapping-Ziel, das eine CAN-Variable ist, würde nie tatsächlich am CAN-Bus ankommen
+    # (can_node.py sendet nur, was zusätzlich in der "TA-Netzwerkausgänge senden"-Tabelle steht).
+    settable_targets = {k for k, v in mqtt_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)}
+
+    if request.method == "POST":
+        errors = []
         mapping_indices = sorted(
             int(key[len("mapping_source_"):])
             for key in request.form
@@ -887,7 +907,7 @@ def mqtt_variables_page():
                 errors.append(f"Mapping-Zeile {i + 1}: Quelle und Ziel sind identisch ('{source}')")
                 continue
             if target not in settable_targets:
-                errors.append(f"Mapping-Zeile {i + 1}: '{target}' ist keine schreibbare Vcontrold-Variable (oben zuerst als 'Schreibbar' aktivieren)")
+                errors.append(f"Mapping-Zeile {i + 1}: '{target}' ist keine schreibbare Vcontrold-Variable (auf der Vitotronic-Seite zuerst als 'Schreibbar' aktivieren)")
                 continue
             if (source, target) in seen_mapping_pairs:
                 errors.append(f"Mapping-Zeile {i + 1}: '{source}' -> '{target}' ist bereits als Set-Weiterleitung angelegt (doppelt)")
@@ -897,65 +917,116 @@ def mqtt_variables_page():
 
         if errors:
             message, message_ok = "\n".join(errors), False
-            mqtt_variables = new_variables  # editierte (fehlerhafte) Werte im Formular zeigen
         else:
-            mqtt_vars.save(new_variables)
-            mqtt_variables = new_variables
             mqtt_mapping.save(new_mappings)
+            status = diagnostics.service_status("orchestrator")
+            restarted = False
+            if status["state"] == "active":
+                restarted = diagnostics.restart_service("orchestrator")["ok"]
+            message = "Gespeichert." + (" orchestrator neu gestartet." if restarted else "")
+            message_ok = True
 
-            restarted, failed = [], []
-            for service in ("orchestrator", "can-node"):
-                status = diagnostics.service_status(service)
-                if status["state"] != "active":
-                    continue
-                result = diagnostics.restart_service(service)
-                (restarted if result["ok"] else failed).append(service)
-            message = "Gespeichert."
-            if restarted:
-                message += f" Neu gestartet: {', '.join(restarted)}."
-            if failed:
-                message += f" Fehler beim Neustart von: {', '.join(failed)}."
-            message_ok = not failed
-
-    custom_rows = []
-    for name, entry in sorted(mqtt_variables.items()):
-        if name in vito_vars:
-            continue
-        row = build_mqtt_variable_rows(entry)
-        row["name"] = name
-        custom_rows.append(row)
-    for _ in range(BLANK_CUSTOM_VARIABLE_ROWS):
-        custom_rows.append({"name": "", "display_name": "", "component": "number", "unit": "", "min": "", "max": "", "step": "", "options": ""})
-
-    # Vorschlagsliste für "Quelle" (Set-Weiterleitung): alle bekannten MQTT-Variablennamen
-    # (vito.xml + konfigurierte MQTT-Variablen). Freies Eintippen bleibt möglich, z.B. für einen
-    # reinen CAN-Empfangskanal, der (noch) keinen eigenen mqtt_variables.json-Eintrag hat -- als
-    # Quelle ist jede Variable sinnvoll, die einen Wert liefert.
+    # Vorschlagsliste für "Quelle": alle bekannten MQTT-Variablennamen (vito.xml + konfigurierte
+    # MQTT-Variablen). Freies Eintippen bleibt möglich, z.B. für einen reinen CAN-Empfangskanal,
+    # der (noch) keinen eigenen mqtt_variables.json-Eintrag hat.
     known_variable_names = sorted(set(vito_vars.keys()) | set(mqtt_variables.keys()))
 
-    # "Ziel" ist dagegen bewusst auf tatsächlich schreibbare Vcontrold-Variablen beschränkt (siehe
-    # POST-Handler oben) -- ein CAN-Ziel würde hier nie tatsächlich am CAN-Bus ankommen, siehe
-    # README "Set-Weiterleitung"/Abschnitt 3. Dieselbe Liste wie zuvor "available_set_keys" auf der
-    # CAN-Einstellungen-Seite (Weiterleitungsziel dort, jetzt hier).
-    settable_targets = sorted(
-        k for k, v in mqtt_variables.items() if k in vito_vars and mqtt_vars.is_writable(v)
-    )
-
     mapping_rows = [dict(m) for m in mqtt_mapping.load()]
-    for _ in range(BLANK_MAPPING_ROWS):
-        mapping_rows.append({"source": "", "target": ""})
 
     return render_template(
-        "mqtt_variables.html",
-        custom_rows=custom_rows,
-        next_custom_index=len(custom_rows),
+        "mqtt_vitotronic.html",
         mapping_rows=mapping_rows,
         next_mapping_index=len(mapping_rows),
         known_variable_names=known_variable_names,
-        settable_targets=settable_targets,
+        settable_targets=sorted(settable_targets),
         message=message,
         message_ok=message_ok,
     )
+
+
+@app.route("/mqtt/configuration", methods=["GET", "POST"])
+def mqtt_configuration_page():
+    message = None
+    message_ok = None
+    test_result = None
+    current = load_env(MQTT_ENV_PATH)
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+
+        if action == "save":
+            new_values = dict(current)
+            for key, _label, required in MQTT_FIELDS:
+                value = request.form.get(key, "").strip()
+                if required and not value:
+                    message, message_ok = f"Feld '{key}' darf nicht leer sein.", False
+                    break
+                new_values[key] = value
+            else:
+                write_env(MQTT_ENV_PATH, new_values)
+                current = new_values
+
+                restarted, failed = [], []
+                for service in MQTT_DEPENDENT_SERVICES:
+                    status = diagnostics.service_status(service)
+                    if status["state"] not in ("active",):
+                        continue  # nur laufende Dienste neu starten, nicht versehentlich welche aktivieren
+                    result = diagnostics.restart_service(service)
+                    (restarted if result["ok"] else failed).append(service)
+
+                message = "MQTT-Konfiguration gespeichert."
+                if restarted:
+                    message += f" Neu gestartet: {', '.join(restarted)}."
+                if failed:
+                    message += f" Fehler beim Neustart von: {', '.join(failed)}."
+                message_ok = not failed
+
+        elif action == "test":
+            new_values = dict(current)
+            for key, _label, _required in MQTT_FIELDS:
+                new_values[key] = request.form.get(key, "").strip()
+            if new_values.get("MQTT_HOST"):
+                test_result = diagnostics.mqtt_connectivity(
+                    new_values["MQTT_HOST"],
+                    int(new_values.get("MQTT_PORT") or 1883),
+                    new_values.get("MQTT_USERNAME") or None,
+                    new_values.get("MQTT_PASSWORD") or None,
+                )
+            else:
+                test_result = {"ok": False, "detail": "Kein Broker-Host angegeben."}
+            current = new_values
+
+    return render_template(
+        "mqtt_configuration.html",
+        fields=MQTT_FIELDS,
+        current=current,
+        message=message,
+        message_ok=message_ok,
+        test_result=test_result,
+    )
+
+
+@app.route("/mqtt/logging")
+def mqtt_logging_page():
+    """MQTT-Bereich, Unterseite 'Logging': Verbindungsstatus zum Broker plus die Logs der beiden
+    MQTT-sprechenden Daemons (orchestrator.py, can_node.py) -- vcontrold selbst spricht kein
+    MQTT, dessen Log liegt auf der Vitotronic-Logging-Seite."""
+    mqtt_env = load_env(MQTT_ENV_PATH)
+    mqtt_status = None
+    if mqtt_env:
+        mqtt_status = diagnostics.mqtt_connectivity(
+            mqtt_env["MQTT_HOST"],
+            int(mqtt_env.get("MQTT_PORT", 1883)),
+            mqtt_env.get("MQTT_USERNAME") or None,
+            mqtt_env.get("MQTT_PASSWORD") or None,
+        )
+    return render_template("mqtt_logging.html", mqtt_status=mqtt_status)
+
+
+@app.route("/settings")
+def settings():
+    """Abgelöst durch /mqtt/configuration -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("mqtt_configuration_page"))
 
 
 @app.route("/diagnostics")

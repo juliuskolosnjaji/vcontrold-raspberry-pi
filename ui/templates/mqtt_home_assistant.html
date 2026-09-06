@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}MQTT: Home Assistant - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>MQTT: Home Assistant</h1>
+
+<div class="section-layout">
+  {{ m.mqtt_section_nav('home-assistant') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p>Custom-CAN-Variablen (Name existiert NICHT in vito.xml). Komplett unabhängig von
+         vito.xml/vcontrold: Home Assistant kann diese Werte direkt lesen <strong>und</strong>
+         schreiben, der Wert geht per CAN direkt an die UVR. Den Namen zusätzlich als Kanal bei
+         <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a> → "TA-Netzwerkausgänge
+         senden" eintragen, damit er tatsächlich über CAN läuft. Nach Typ gruppiert -- eine
+         Variable, deren Typ sich ändern soll, in der bisherigen Tabelle entfernen und in der
+         neuen Tabelle neu anlegen.</p>
+    </div>
+
+    <div class="card live-refresh-row">
+      <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder ausgefüllten Variable (kurzer Snapshot, keine Dauerverbindung).</span>
+    </div>
+
+    <form method="post">
+
+      <details class="config-file-block wide-block" open>
+        <summary>Number ({{ number_rows|length }})</summary>
+        <table class="canvar-table">
+          <tr><th>Name</th><th>Anzeigename in HA</th><th>Einheit</th><th>Min</th><th>Max</th><th>Step</th><th></th></tr>
+          <tbody id="number-tbody">
+          {% for row in number_rows %}
+          {% set i = loop.index0 %}
+          <tr class="canvar-row">
+            <td><input type="text" name="customvar_number_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_sollwert_kollektor" data-live></td>
+            <td><input type="text" name="customvar_number_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
+            <td><input type="text" name="customvar_number_unit_{{ i }}" value="{{ row.unit }}" placeholder="°C"></td>
+            <td><input type="text" name="customvar_number_min_{{ i }}" value="{{ row.min }}" placeholder="Min"></td>
+            <td><input type="text" name="customvar_number_max_{{ i }}" value="{{ row.max }}" placeholder="Max"></td>
+            <td><input type="text" name="customvar_number_step_{{ i }}" value="{{ row.step }}" placeholder="Step"></td>
+            <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" id="add-number-row">+ Zeile hinzufügen</button>
+      </details>
+
+      <template id="number-row-template">
+        <tr class="canvar-row">
+          <td><input type="text" name="customvar_number_name___IDX__" placeholder="z.B. uvr_sollwert_kollektor" data-live></td>
+          <td><input type="text" name="customvar_number_display___IDX__" placeholder="optional"></td>
+          <td><input type="text" name="customvar_number_unit___IDX__" placeholder="°C"></td>
+          <td><input type="text" name="customvar_number_min___IDX__" placeholder="Min"></td>
+          <td><input type="text" name="customvar_number_max___IDX__" placeholder="Max"></td>
+          <td><input type="text" name="customvar_number_step___IDX__" placeholder="Step"></td>
+          <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+        </tr>
+      </template>
+
+      <details class="config-file-block wide-block" open>
+        <summary>Select ({{ select_rows|length }})</summary>
+        <table class="canvar-table">
+          <tr><th>Name</th><th>Anzeigename in HA</th><th>Optionen</th><th></th></tr>
+          <tbody id="select-tbody">
+          {% for row in select_rows %}
+          {% set i = loop.index0 %}
+          <tr class="canvar-row">
+            <td><input type="text" name="customvar_select_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_betriebsmodus" data-live></td>
+            <td><input type="text" name="customvar_select_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
+            <td><input type="text" name="customvar_select_options_{{ i }}" value="{{ row.options }}" placeholder="AUTO, AN, AUS"></td>
+            <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" id="add-select-row">+ Zeile hinzufügen</button>
+      </details>
+
+      <template id="select-row-template">
+        <tr class="canvar-row">
+          <td><input type="text" name="customvar_select_name___IDX__" placeholder="z.B. uvr_betriebsmodus" data-live></td>
+          <td><input type="text" name="customvar_select_display___IDX__" placeholder="optional"></td>
+          <td><input type="text" name="customvar_select_options___IDX__" placeholder="AUTO, AN, AUS"></td>
+          <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+        </tr>
+      </template>
+
+      <details class="config-file-block wide-block" open>
+        <summary>Switch ({{ switch_rows|length }})</summary>
+        <table class="canvar-table">
+          <tr><th>Name</th><th>Anzeigename in HA</th><th></th></tr>
+          <tbody id="switch-tbody">
+          {% for row in switch_rows %}
+          {% set i = loop.index0 %}
+          <tr class="canvar-row">
+            <td><input type="text" name="customvar_switch_name_{{ i }}" value="{{ row.name }}" placeholder="z.B. uvr_pumpe_status" data-live></td>
+            <td><input type="text" name="customvar_switch_display_{{ i }}" value="{{ row.display_name }}" placeholder="optional"></td>
+            <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" id="add-switch-row">+ Zeile hinzufügen</button>
+      </details>
+
+      <template id="switch-row-template">
+        <tr class="canvar-row">
+          <td><input type="text" name="customvar_switch_name___IDX__" placeholder="z.B. uvr_pumpe_status" data-live></td>
+          <td><input type="text" name="customvar_switch_display___IDX__" placeholder="optional"></td>
+          <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+        </tr>
+      </template>
+
+      <div class="card">
+        <button type="submit" onclick="return confirm('Home-Assistant-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
+      </div>
+    </form>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+function addRowHandler(groupName) {
+  let nextIndex = document.querySelectorAll('#' + groupName + '-tbody .canvar-row').length;
+  document.getElementById('add-' + groupName + '-row').addEventListener('click', function () {
+    const template = document.getElementById(groupName + '-row-template');
+    const clone = template.content.cloneNode(true);
+    clone.querySelectorAll('[name]').forEach(function (el) {
+      el.name = el.name.replace('__IDX__', nextIndex);
+    });
+    document.getElementById(groupName + '-tbody').appendChild(clone);
+    nextIndex++;
+  });
+}
+addRowHandler('number');
+addRowHandler('select');
+addRowHandler('switch');
+
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
+{% endblock %}

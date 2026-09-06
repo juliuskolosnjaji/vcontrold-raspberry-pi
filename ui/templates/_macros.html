@@ -13,6 +13,18 @@
 {% endmacro %}
 
 
+{% macro mqtt_section_nav(active) %}
+{#- Linke Seitenleiste für den MQTT-Bereich (siehe section_nav() für den analogen Vitotronic-
+   Bereich). `active` ist einer von: home-assistant, vitotronic, configuration, logging. -#}
+<nav class="section-sidebar">
+  <a href="{{ url_for('mqtt_vitotronic_page') }}" {% if active == 'vitotronic' %}class="active"{% endif %}>Vitotronic</a>
+  <a href="{{ url_for('mqtt_home_assistant_page') }}" {% if active == 'home-assistant' %}class="active"{% endif %}>Home Assistant</a>
+  <a href="{{ url_for('mqtt_configuration_page') }}" {% if active == 'configuration' %}class="active"{% endif %}>Configuration</a>
+  <a href="{{ url_for('mqtt_logging_page') }}" {% if active == 'logging' %}class="active"{% endif %}>Logging</a>
+</nav>
+{% endmacro %}
+
+
 {% macro xml_editor(target, content, label, post_action, return_to=None) %}
 <div class="config-file-body">
   <form method="post" enctype="multipart/form-data" action="{{ post_action }}" class="config-import-form">

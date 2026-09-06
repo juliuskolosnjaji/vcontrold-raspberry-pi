@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}MQTT: Vitotronic - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>MQTT: Vitotronic</h1>
+
+<div class="section-layout">
+  {{ m.mqtt_section_nav('vitotronic') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p><strong>Set-Weiterleitung:</strong> ein Wert, den du woanders bereits als MQTT-Variable
+         hast (typischerweise ein von der UVR per CAN empfangener Wert, z.B. ein dort berechneter
+         Raumsollwert), soll einen echten <strong>Set-Befehl in der Vitotronic</strong> auslösen --
+         nicht nur angezeigt werden. Beispiel: die UVR ermittelt einen neuen Raumsollwert und
+         sendet ihn per CAN an den Pi (siehe <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>
+         → "CAN-Analogausgänge empfangen", dort als eigene Variable eintragen, z.B.
+         <code>uvr_raumsollwert</code>). Hier trägst du dann <code>uvr_raumsollwert</code> als
+         Quelle ein, <code>TempRaumNorSoll</code> als Ziel -- der Orchestrator setzt den Wert dann
+         in der Vitotronic und verifiziert ihn.</p>
+      <p><strong>Wichtig:</strong> Für die umgekehrte Richtung -- ein Vcontrold-/MQTT-Wert soll per
+         CAN an die UVR gesendet werden -- ist diese Seite <strong>nicht</strong> zuständig, dafür
+         die 16-Slot-Tabelle "TA-Netzwerkausgänge senden" auf der
+         <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite: dort einfach den
+         Variablennamen eintragen, fertig. Deshalb akzeptiert das "Ziel"-Feld hier ausschließlich
+         Vitotronic-Parameter, die auf der <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite
+         als "Schreibbar" aktiviert sind -- ein CAN-Ziel würde hier ohnehin nie tatsächlich am
+         CAN-Bus ankommen.</p>
+    </div>
+
+    <div class="card live-refresh-row">
+      <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder ausgefüllten Variable (kurzer Snapshot, keine Dauerverbindung).</span>
+    </div>
+
+    <form method="post">
+      <details class="config-file-block wide-block" open>
+        <summary>Set-Weiterleitung ({{ mapping_rows|length }})</summary>
+        <table class="canvar-table">
+          <tr><th>Quelle (beliebige MQTT-Variable)</th><th></th><th>Ziel (Vitotronic-Parameter setzen)</th><th></th></tr>
+          <tbody id="mapping-tbody">
+          {% for row in mapping_rows %}
+          {% set i = loop.index0 %}
+          <tr class="canvar-row">
+            <td><input type="text" name="mapping_source_{{ i }}" value="{{ row.source }}" list="known-variable-names" placeholder="z.B. uvr_raumsollwert" data-live></td>
+            <td style="text-align:center;">→</td>
+            <td>
+              <select name="mapping_target_{{ i }}" data-live>
+                <option value="" {% if not row.target %}selected{% endif %}>— keine —</option>
+                {% for k in settable_targets %}
+                <option value="{{ k }}" {% if row.target == k %}selected{% endif %}>{{ k }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if not settable_targets %}
+        <p><em>Noch keine schreibbaren Vitotronic-Parameter registriert -- auf der
+           <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite bei einer
+           Variable mit Setter "Schreibbar" aktivieren, dann steht sie hier als Ziel zur
+           Auswahl.</em></p>
+        {% endif %}
+        <button type="button" id="add-mapping-row">+ Zeile hinzufügen</button>
+      </details>
+
+      <datalist id="known-variable-names">
+        {% for n in known_variable_names %}
+        <option value="{{ n }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <template id="mapping-row-template">
+        <tr class="canvar-row">
+          <td><input type="text" name="mapping_source___IDX__" list="known-variable-names" placeholder="z.B. uvr_raumsollwert" data-live></td>
+          <td style="text-align:center;">→</td>
+          <td>
+            <select name="mapping_target___IDX__" data-live>
+              <option value="" selected>— keine —</option>
+              {% for k in settable_targets %}
+              <option value="{{ k }}">{{ k }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
+        </tr>
+      </template>
+
+      <div class="card">
+        <button type="submit" onclick="return confirm('Set-Weiterleitung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
+      </div>
+    </form>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+let nextMappingIndex = {{ next_mapping_index }};
+document.getElementById('add-mapping-row').addEventListener('click', function () {
+  const template = document.getElementById('mapping-row-template');
+  const clone = template.content.cloneNode(true);
+  clone.querySelectorAll('[name]').forEach(function (el) {
+    el.name = el.name.replace('__IDX__', nextMappingIndex);
+  });
+  document.getElementById('mapping-tbody').appendChild(clone);
+  nextMappingIndex++;
+});
+
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
+{% endblock %}
