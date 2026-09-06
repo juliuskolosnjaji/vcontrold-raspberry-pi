@@ -22,7 +22,7 @@ CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "mqtt_
 # angelegte CAN-Variable, siehe prune_removed_vito_variables()). Lokale Laufzeit-Datei.
 _VITO_STATE_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / ".mqtt_variables_vito_state.json"
 
-WRITABLE_COMPONENTS = ("number", "select", "switch")
+WRITABLE_COMPONENTS = ("number", "select", "switch", "text")
 
 
 def load(path: pathlib.Path = CONFIG_PATH) -> dict:

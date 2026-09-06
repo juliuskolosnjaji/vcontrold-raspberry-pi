@@ -156,7 +156,9 @@ WRITABLE_METADATA = {
 def build_writable_config(
     key: str, state_topic: str, command_topic: str, discovery_opts: dict, device: dict = None, id_prefix: str = "vcontrold"
 ) -> tuple[str, dict]:
-    """Gibt (component, config) zurück, component ist 'number', 'select' oder 'switch'."""
+    """Gibt (component, config) zurück, component ist 'number', 'select', 'switch' oder 'text'
+    (Zeitschaltuhr-Variablen, siehe timer_format.py -- orchestrator.py wandelt das hier als
+    Pattern vorgegebene kompakte Format in beide Richtungen in das vclient-Format um)."""
     discovery_opts = {**WRITABLE_METADATA.get(key, {}), **discovery_opts}
     component = discovery_opts.get("component", "number")
     config = {
@@ -180,6 +182,14 @@ def build_writable_config(
         # Rohwert von vclient/vito.xml ist "0"/"1", passt direkt auf payload_off/on.
         config["payload_on"] = "1"
         config["payload_off"] = "0"
+    elif component == "text":
+        config["max"] = discovery_opts.get("max", 50)
+        # Ein bis vier Slots "HH:MM-HH:MM" oder "--", leerzeichengetrennt -- siehe
+        # timer_format.py's Anzeigeformat. Rein clientseitige Validierung in Home Assistant;
+        # orchestrator.py validiert beim Set-Empfang zusätzlich serverseitig.
+        config["pattern"] = discovery_opts.get(
+            "pattern", r"^(--|\d{2}:\d{2}-\d{2}:\d{2})( (--|\d{2}:\d{2}-\d{2}:\d{2})){0,3}$"
+        )
     return component, config
 
 

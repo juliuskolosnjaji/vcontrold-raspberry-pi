@@ -40,6 +40,7 @@ import time
 import ha_discovery
 import mqtt_mapping
 import mqtt_variables as mqtt_vars
+import timer_format
 import vito_variables
 from mqtt_common import make_client, sync_retained_topics
 
@@ -88,7 +89,13 @@ def run_vclient(command: str) -> str | None:
         print(f"Fehler bei '{command}': {exc}", file=sys.stderr)
         return None
     lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-    return lines[-1] if lines else None
+    if not lines:
+        return None
+    # vclient stellt der eigentlichen Antwort immer eine Kopfzeile "<kommando>:" voran --
+    # bei den meisten Kommandos folgt darauf genau eine Datenzeile (früher wurde deshalb nur
+    # lines[-1] genommen), aber die Zeitschaltuhr-Kommandos (getTimerXxx, siehe
+    # timer_format.py) geben VIER Datenzeilen zurück, die alle erhalten bleiben müssen.
+    return "\n".join(lines[1:]) if len(lines) > 1 else lines[0]
 
 
 # Trennzeichen für Batch-Antworten: ein Steuerzeichen, das in keiner realen
@@ -301,7 +308,20 @@ class Orchestrator:
             print(f"Keine Setter-Definition für '{key}' in vito.xml gefunden (Quelle: {source})", file=sys.stderr)
             return
 
-        set_result = run_vclient(f"{variable['set']} {payload}")
+        # Zeitschaltuhr-Variablen kommen im kompakten Anzeigeformat an (siehe timer_format.py,
+        # HA-Text-Entity zeigt/erwartet dieses Format) -- vclient braucht stattdessen 8 einzelne
+        # Zeit-/"--"-Token. Ein ungültiges Format wird abgelehnt statt es ungeprüft an vclient
+        # weiterzureichen (sonst würde ein Tippfehler als falsch interpretiertes Zeitpaar in der
+        # echten Heizungssteuerung landen).
+        if timer_format.is_timer_variable(key):
+            vclient_args = timer_format.to_vclient_args(payload)
+            if vclient_args is None:
+                print(f"Ungültiges Zeitschaltuhr-Format für '{key}': {payload!r} (erwartet z.B. '05:00-23:00 -- -- --', Quelle: {source})", file=sys.stderr)
+                return
+        else:
+            vclient_args = payload
+
+        set_result = run_vclient(f"{variable['set']} {vclient_args}")
         if set_result is None:
             print(f"Set fehlgeschlagen: {key}={payload} (Quelle: {source})", file=sys.stderr)
             return
@@ -321,7 +341,10 @@ class Orchestrator:
         """Published einen verifizierten/gelesenen Wert (retained) -- Home Assistant UND
         can_node.py (für die CAN-Weiterleitung) abonnieren denselben Topic, kein separater
         interner Kanal mehr."""
-        value = extract_numeric_value(value)
+        if timer_format.is_timer_variable(key):
+            value = timer_format.to_display(value)
+        else:
+            value = extract_numeric_value(value)
         self.client.publish(f"{self.topic_heizung}/{key}", value, retain=True)
 
     def run_due_cycles(self) -> None:

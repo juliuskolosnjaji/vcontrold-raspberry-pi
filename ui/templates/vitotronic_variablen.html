@@ -69,6 +69,7 @@
                 <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
                 <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
                 <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
+                <option value="text" {% if row.component == "text" %}selected{% endif %}>Text (Zeitschaltuhr)</option>
               </select>
             </td>
             <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
