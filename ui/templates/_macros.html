@@ -96,9 +96,9 @@ function confirmIfSet() {
   <details class="config-file-block" open>
     <summary>Zyklen</summary>
     <p>Wie oft welcher Read-Zyklus abgefragt wird. Welche Variable zu welchem Zyklus gehört, wird
-       auf der eigenständigen <a href="{{ url_for('mqtt_variables_page') }}">MQTT-Variablen</a>-Seite
-       direkt bei der jeweiligen Variable zugeordnet -- nur zugeordnete Variablen werden
-       tatsächlich von der Vitotronic gelesen und als <code>heizung/&lt;Name&gt;</code> published.</p>
+       auf der <a href="{{ url_for('vitotronic_variablen_page') }}">Variablen</a>-Seite direkt bei
+       der jeweiligen Variable zugeordnet -- nur zugeordnete Variablen werden tatsächlich von der
+       Vitotronic gelesen und als <code>heizung/&lt;Name&gt;</code> published.</p>
     <table style="max-width: 700px;">
       <tr><th>Zyklus</th><th>Name</th><th>Intervall (Sek.)</th></tr>
       {% for i in num_cycles %}
