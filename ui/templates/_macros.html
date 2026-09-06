@@ -25,6 +25,19 @@
 {% endmacro %}
 
 
+{% macro can_section_nav(active) %}
+{#- Linke Seitenleiste für den CAN-Bereich (siehe section_nav()/mqtt_section_nav() für die
+   analogen Vitotronic-/MQTT-Bereiche). `active` ist einer von: eingaenge, ausgaenge,
+   configuration, logging. -#}
+<nav class="section-sidebar">
+  <a href="{{ url_for('can_eingaenge_page') }}" {% if active == 'eingaenge' %}class="active"{% endif %}>Eingänge</a>
+  <a href="{{ url_for('can_ausgaenge_page') }}" {% if active == 'ausgaenge' %}class="active"{% endif %}>Ausgänge</a>
+  <a href="{{ url_for('can_configuration_page') }}" {% if active == 'configuration' %}class="active"{% endif %}>Configuration</a>
+  <a href="{{ url_for('can_logging_page') }}" {% if active == 'logging' %}class="active"{% endif %}>Logging</a>
+</nav>
+{% endmacro %}
+
+
 {% macro xml_editor(target, content, label, post_action, return_to=None) %}
 <div class="config-file-body">
   <form method="post" enctype="multipart/form-data" action="{{ post_action }}" class="config-import-form">

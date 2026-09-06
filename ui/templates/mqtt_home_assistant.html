@@ -13,7 +13,7 @@
       <p>Custom-CAN-Variablen (Name existiert NICHT in vito.xml). Komplett unabhängig von
          vito.xml/vcontrold: Home Assistant kann diese Werte direkt lesen <strong>und</strong>
          schreiben, der Wert geht per CAN direkt an die UVR. Den Namen zusätzlich als Kanal bei
-         <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a> → "TA-Netzwerkausgänge
+         <a href="{{ url_for('can_ausgaenge_page') }}">CAN &gt; Ausgänge</a> → "TA-Netzwerkausgänge
          senden" eintragen, damit er tatsächlich über CAN läuft. Nach Typ gruppiert -- eine
          Variable, deren Typ sich ändern soll, in der bisherigen Tabelle entfernen und in der
          neuen Tabelle neu anlegen.</p>
@@ -21,10 +21,11 @@
 
     <div class="card live-refresh-row">
       <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <button type="submit" form="customvar-form" onclick="return confirm('Home-Assistant-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
       <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder ausgefüllten Variable (kurzer Snapshot, keine Dauerverbindung).</span>
     </div>
 
-    <form method="post">
+    <form method="post" id="customvar-form">
 
       <details class="config-file-block wide-block" open>
         <summary>Number ({{ number_rows|length }})</summary>
@@ -113,10 +114,6 @@
           <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
         </tr>
       </template>
-
-      <div class="card">
-        <button type="submit" onclick="return confirm('Home-Assistant-Variablen speichern und orchestrator/can-node (falls aktiv) neu starten?');">Speichern &amp; neu starten</button>
-      </div>
     </form>
 
     {% if message %}

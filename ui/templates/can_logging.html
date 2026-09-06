@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}CAN: Logging - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>CAN: Logging</h1>
+
+<div class="section-layout">
+  {{ m.can_section_nav('logging') }}
+  <div class="section-content">
+
+    <div class="card">
+      <h2>CAN-Interface ({{ cfg.can_interface }})</h2>
+      <pre>{{ can_status }}</pre>
+    </div>
+
+    <div class="card">
+      <h2>CAN-Sniffer</h2>
+      <p>Zeichnet für die angegebene Dauer alle Frames auf <code>{{ cfg.can_interface }}</code>
+         auf. Nützlich, um das Protokoll der Technische-Alternative-UVR empirisch zu ermitteln --
+         z.B. um eine CAN-ID für die <a href="{{ url_for('can_eingaenge_page') }}">Eingänge</a>-Seite
+         zu finden (siehe README Abschnitt 3.4/3.5).</p>
+      <label for="duration">Dauer (Sekunden, 1-30)</label>
+      <input type="number" id="duration" value="5" min="1" max="30">
+      <button onclick="capture()">Aufzeichnen</button>
+    </div>
+
+    <div class="card" id="results" style="display:none;">
+      <h2>Aufgezeichnete Frames</h2>
+      <table>
+        <tr><th>Zeitstempel</th><th>CAN-ID</th><th>DLC</th><th>Daten (hex)</th></tr>
+        <tbody id="frames-body"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function capture() {
+  const duration = document.getElementById('duration').value;
+  const body = new URLSearchParams({duration});
+  document.getElementById('results').style.display = 'none';
+  fetch('/can-sniffer/capture', {method: 'POST', body})
+    .then(r => r.json())
+    .then(data => {
+      const tbody = document.getElementById('frames-body');
+      tbody.innerHTML = '';
+      data.frames.forEach(f => {
+        const tr = document.createElement('tr');
+        if (f.error) {
+          tr.innerHTML = '<td colspan="4" class="message-error">' + f.error + '</td>';
+        } else {
+          tr.innerHTML = `<td>${f.timestamp}</td><td>${f.id}</td><td>${f.dlc}</td><td>${f.data}</td>`;
+        }
+        tbody.appendChild(tr);
+      });
+      document.getElementById('results').style.display = 'block';
+    });
+}
+</script>
+{% endblock %}

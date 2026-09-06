@@ -14,7 +14,7 @@
          hast (typischerweise ein von der UVR per CAN empfangener Wert, z.B. ein dort berechneter
          Raumsollwert), soll einen echten <strong>Set-Befehl in der Vitotronic</strong> auslösen --
          nicht nur angezeigt werden. Beispiel: die UVR ermittelt einen neuen Raumsollwert und
-         sendet ihn per CAN an den Pi (siehe <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>
+         sendet ihn per CAN an den Pi (siehe <a href="{{ url_for('can_eingaenge_page') }}">CAN &gt; Eingänge</a>
          → "CAN-Analogausgänge empfangen", dort als eigene Variable eintragen, z.B.
          <code>uvr_raumsollwert</code>). Hier trägst du dann <code>uvr_raumsollwert</code> als
          Quelle ein, <code>TempRaumNorSoll</code> als Ziel -- der Orchestrator setzt den Wert dann
@@ -22,7 +22,7 @@
       <p><strong>Wichtig:</strong> Für die umgekehrte Richtung -- ein Vcontrold-/MQTT-Wert soll per
          CAN an die UVR gesendet werden -- ist diese Seite <strong>nicht</strong> zuständig, dafür
          die 16-Slot-Tabelle "TA-Netzwerkausgänge senden" auf der
-         <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite: dort einfach den
+         <a href="{{ url_for('can_ausgaenge_page') }}">CAN &gt; Ausgänge</a>-Seite: dort einfach den
          Variablennamen eintragen, fertig. Deshalb akzeptiert das "Ziel"-Feld hier ausschließlich
          Vitotronic-Parameter, die auf der <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite
          als "Schreibbar" aktiviert sind -- ein CAN-Ziel würde hier ohnehin nie tatsächlich am
@@ -31,10 +31,11 @@
 
     <div class="card live-refresh-row">
       <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <button type="submit" form="mapping-form" onclick="return confirm('Set-Weiterleitung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
       <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder ausgefüllten Variable (kurzer Snapshot, keine Dauerverbindung).</span>
     </div>
 
-    <form method="post">
+    <form method="post" id="mapping-form">
       <details class="config-file-block wide-block" open>
         <summary>Set-Weiterleitung ({{ mapping_rows|length }})</summary>
         <table class="canvar-table">
@@ -88,10 +89,6 @@
           <td><button type="button" class="row-remove-btn" onclick="removeRow(this)" title="Zeile entfernen">✕</button></td>
         </tr>
       </template>
-
-      <div class="card">
-        <button type="submit" onclick="return confirm('Set-Weiterleitung speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
-      </div>
     </form>
 
     {% if message %}

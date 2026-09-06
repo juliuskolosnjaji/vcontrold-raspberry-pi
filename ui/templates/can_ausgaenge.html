@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}CAN: Ausgänge - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>CAN: Ausgänge</h1>
+
+<div class="section-layout">
+  {{ m.can_section_nav('ausgaenge') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p><strong>Sendet immer den MQTT-Topic <code>heizung/&lt;Name&gt;</code> — nie direkt einen
+         Vcontrold-Wert.</strong> Vcontrold und CAN sind komplett getrennte Prozesse
+         (<code>orchestrator.py</code> bzw. <code>can-node.py</code>); die einzige Verbindung
+         zwischen ihnen ist MQTT (siehe README "MQTT-Architektur"). Trag hier also den Namen eines
+         MQTT-Topics <code>heizung/&lt;Name&gt;</code> ein (ohne das Präfix <code>heizung/</code>),
+         dessen aktuellen Wert <code>can-node</code> per CAN im tatsächlich von TA verwendeten
+         Format sendet (COB-ID <code>0x200/0x280/0x300/0x380 + Eigene Knoten-Nummer</code> für
+         Analog, <code>0x180 + Eigene Knoten-Nummer</code> für Digital — siehe README Abschnitt
+         3.3). "Ausgang" ist hier <strong>keine UVR-Nummer</strong>, sondern deine frei gewählte
+         Sendekanal-Nummer -- auf der UVR muss dafür ein "CAN-Analogeingang"/"CAN-Digitaleingang"
+         mit <strong>Knotennummer = Eigene Knoten-Nummer</strong> (siehe
+         <a href="{{ url_for('can_configuration_page') }}">Configuration</a>) und
+         <strong>Ausgangsnummer = dieselbe Zeilennummer hier</strong> angelegt werden. Am besten
+         nur so viele Zeilen belegen wie Werte gebraucht werden, jede Variable in genau einer
+         Zeile.</p>
+      <p>Die Vorschlagsliste im Freitextfeld zeigt alle <code>vito.xml</code>-Variablen (siehe
+         <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite), weil das der
+         häufigste Fall ist — eine vito.xml-Variable landet aber selbst nur dann auf
+         <code>heizung/&lt;Name&gt;</code>, wenn sie zusätzlich einem Lese-Zyklus zugeordnet ist.
+         Ohne Zyklus steht auf dem Topic nie ein Wert, und <code>can-node</code> sendet nichts.
+         Genauso kannst du einen Namen eintragen, der gar nicht aus vito.xml stammt — solange
+         irgendetwas (z.B. Home Assistant direkt) auf <code>heizung/&lt;Name&gt;</code> published,
+         sendet <code>can-node</code> diesen Wert, unabhängig von der Quelle. Analog-Kodierung ist
+         gegen echte Hardware bestätigt, Digital noch nicht getestet.</p>
+      <p><strong>Diese Tabelle ist der einzige Weg, einen Wert per CAN an die UVR zu senden</strong> —
+         ein Name, der hier steht, wird automatisch bei jeder Änderung gesendet, ohne dass an
+         anderer Stelle noch etwas konfiguriert werden muss. Für die Gegenrichtung (ein von der
+         UVR empfangener Wert soll einen echten Set-Befehl in der Vitotronic auslösen) siehe
+         <a href="{{ url_for('mqtt_vitotronic_page') }}">MQTT &gt; Vitotronic</a> → "Set-Weiterleitung".</p>
+    </div>
+
+    <form method="post">
+      <div class="card live-refresh-row">
+        <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+        <button type="submit" onclick="return confirm('CAN-Ausgänge speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
+        <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jedem ausgefüllten Variablenfeld (kurzer Snapshot, keine Dauerverbindung).</span>
+      </div>
+
+      <datalist id="tx-subtopics">
+        {% for s in available_subtopics %}
+        <option value="{{ s }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <details class="config-file-block wide-block" open>
+        <summary>TA-Netzwerkausgänge senden (bestätigtes Schema)</summary>
+        <table class="canvar-table">
+          <tr><th>Ausgang</th><th>Analog: heizung/…</th><th>Digital: heizung/…</th></tr>
+          {% for i in range(total_slots) %}
+          <tr>
+            <td>{{ i + 1 }}</td>
+            <td><input type="text" name="ta_net_analog_{{ i }}" value="{{ ta_net_analog[i] or '' }}" list="tx-subtopics" placeholder="z.B. TempKist" data-live></td>
+            <td><input type="text" name="ta_net_digital_{{ i }}" value="{{ ta_net_digital[i] or '' }}" list="tx-subtopics" placeholder="z.B. BrennerStatus" data-live></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </details>
+    </form>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<script>
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
+{% endblock %}

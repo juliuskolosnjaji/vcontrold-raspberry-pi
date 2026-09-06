@@ -24,12 +24,13 @@
 
     <div class="card live-refresh-row">
       <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+      <button type="submit" form="variablen-form" onclick="return confirm('Variablen speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
       <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jeder Variable (kurzer Snapshot, keine Dauerverbindung).</span>
     </div>
 
     <input type="text" id="vitovar-filter" placeholder="🔍 Filtern nach Name…" style="max-width:300px;">
 
-    <form method="post">
+    <form method="post" id="variablen-form">
       <details class="config-file-block wide-block" open>
         <summary>Setter ({{ setter_rows|length }})</summary>
         <table class="variables-table vitovar-table">
@@ -115,10 +116,6 @@
           {% endfor %}
         </table>
       </details>
-
-      <div class="card">
-        <button type="submit" onclick="return confirm('Variablen speichern und orchestrator (falls aktiv) neu starten?');">Speichern &amp; orchestrator neu starten</button>
-      </div>
     </form>
 
     {% if message %}

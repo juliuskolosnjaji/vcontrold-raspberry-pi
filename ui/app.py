@@ -332,27 +332,52 @@ def parse_discovery_fields(prefix: str, suffix, error_label: str, errors: list) 
     return discovery
 
 
-@app.route("/can-settings", methods=["GET", "POST"])
+@app.route("/can-settings")
 def can_settings():
+    """Abgelöst durch den CAN-Bereich mit eigener Seitenleiste (Eingänge/Ausgänge/Configuration/
+    Logging, siehe can_section_nav()-Makro) -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("can_eingaenge_page"))
+
+
+def save_can_mapping_partial(new_values: dict, managed_keys: set) -> dict:
+    """Speichert can_mapping.json, aber nur für `managed_keys` (die Top-Level-Schlüssel, für die
+    die aufrufende Seite zuständig ist) -- alle anderen Schlüssel (von den beiden anderen
+    CAN-Unterseiten oder z.B. manuell angelegtes sdo_record) bleiben unangetastet erhalten, statt
+    von einem Speichern-Klick auf nur einer Unterseite überschrieben zu werden. Ein Schlüssel in
+    `managed_keys`, der NICHT in `new_values` auftaucht, wird explizit entfernt (z.B. weil die
+    CAN-ID auf der Eingänge-Seite geleert wurde)."""
+    mapping = load_can_mapping()
+    for key in managed_keys:
+        mapping.pop(key, None)
+    mapping.update(new_values)
+    atomic_io.write_json(CAN_MAPPING_PATH, mapping)
+    return mapping
+
+
+def restart_can_node_if_active() -> tuple[str, bool]:
+    status = diagnostics.service_status("can-node")
+    if status["state"] != "active":
+        return "Gespeichert. can-node läuft nicht, wurde nicht neu gestartet.", True
+    restart = diagnostics.restart_service("can-node")
+    if restart["ok"]:
+        return "Gespeichert, can-node neu gestartet.", True
+    return f"Gespeichert, aber Neustart fehlgeschlagen: {restart['detail']}", False
+
+
+@app.route("/can/eingaenge", methods=["GET", "POST"])
+def can_eingaenge_page():
+    """CAN-Bereich, Unterseite 'Eingänge': liest die tatsächlichen CAN-Analog-/Digitalausgänge
+    der UVR (aus UVR-Sicht 'Ausgänge', aus Sicht dieser UI Eingänge -- sie kommen bei uns an)."""
     message = None
     message_ok = None
     cfg = get_ui_config()
     mapping = load_can_mapping()
     mqtt_variables = mqtt_vars.load()
-    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])
 
     if request.method == "POST":
-        new_mapping = {
-            "bitrate": int(request.form.get("bitrate", proto.DEFAULT_BITRATE) or proto.DEFAULT_BITRATE),
-            "own_node_number": int(request.form.get("own_node_number", 1) or 1),
-        }
-        # sdo_record hat (noch) keine eigenen Formularfelder auf dieser Seite -- unverändert
-        # übernehmen, sonst würde ein Speichern hier eine manuell/per JSON angelegte
-        # sdo_record-Konfiguration stillschweigend löschen.
-        if "sdo_record" in mapping:
-            new_mapping["sdo_record"] = mapping["sdo_record"]
+        new_values = {}
         errors = []
-
         for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
             can_id_raw = request.form.get(f"{key}_can_id", "").strip()
             outputs = parse_ta_rx_output_rows(key)
@@ -365,38 +390,60 @@ def can_settings():
             except ValueError:
                 errors.append(f"{key}: ungültige CAN-ID '{can_id_raw}'")
                 continue
-            new_mapping[key] = {"can_id": hex(can_id_int), "outputs": outputs}
+            new_values[key] = {"can_id": hex(can_id_int), "outputs": outputs}
 
+        if errors:
+            message, message_ok = "\n".join(errors), False
+            mapping = {**mapping, **new_values}  # editierte (fehlerhafte) Werte im Formular zeigen
+        else:
+            mapping = save_can_mapping_partial(new_values, {"rx_ta_analog_outputs", "rx_ta_digital_outputs"})
+            message, message_ok = restart_can_node_if_active()
+
+    existing_uvr_topics = set()
+    for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
+        existing_uvr_topics.update(mapping.get(key, {}).get("outputs", {}).values())
+    existing_uvr_topics.update(mapping.get("sdo_record", {}).get("slots", {}).values())
+    existing_uvr_topics.update(k for k in mqtt_variables if k not in vito_vars)
+
+    return render_template(
+        "can_eingaenge.html",
+        rx_ta_analog_can_id=mapping.get("rx_ta_analog_outputs", {}).get("can_id", ""),
+        rx_ta_analog_rows=build_ta_rx_output_rows(mapping.get("rx_ta_analog_outputs")),
+        rx_ta_digital_can_id=mapping.get("rx_ta_digital_outputs", {}).get("can_id", ""),
+        rx_ta_digital_rows=build_ta_rx_output_rows(mapping.get("rx_ta_digital_outputs")),
+        ta_rx_output_slots=TA_RX_OUTPUT_SLOTS,
+        uvr_topics=sorted(existing_uvr_topics),
+        message=message,
+        message_ok=message_ok,
+    )
+
+
+@app.route("/can/ausgaenge", methods=["GET", "POST"])
+def can_ausgaenge_page():
+    """CAN-Bereich, Unterseite 'Ausgänge': TA-Netzwerkausgänge senden -- der einzige Weg, einen
+    MQTT-Wert per CAN an die UVR zu senden (siehe can_mapping.json/ta_network_outputs)."""
+    message = None
+    message_ok = None
+    cfg = get_ui_config()
+    mapping = load_can_mapping()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])
+
+    if request.method == "POST":
         ta_net_analog = [
             request.form.get(f"ta_net_analog_{i}", "").strip() or None for i in range(TA_NETWORK_OUTPUT_SLOTS)
         ]
         ta_net_digital = [
             request.form.get(f"ta_net_digital_{i}", "").strip() or None for i in range(TA_NETWORK_OUTPUT_SLOTS)
         ]
+        new_values = {}
         if any(ta_net_analog) or any(ta_net_digital):
-            new_mapping["ta_network_outputs"] = {"analog": ta_net_analog, "digital": ta_net_digital}
+            new_values["ta_network_outputs"] = {"analog": ta_net_analog, "digital": ta_net_digital}
+        mapping = save_can_mapping_partial(new_values, {"ta_network_outputs"})
+        message, message_ok = restart_can_node_if_active()
 
-        if errors:
-            message, message_ok = "\n".join(errors), False
-            mapping = new_mapping  # editierte (fehlerhafte) Werte im Formular zeigen
-        else:
-            atomic_io.write_json(CAN_MAPPING_PATH, new_mapping)
-            mapping = new_mapping
-
-            status = diagnostics.service_status("can-node")
-            if status["state"] == "active":
-                restart = diagnostics.restart_service("can-node")
-                if restart["ok"]:
-                    message, message_ok = "Gespeichert, can-node neu gestartet.", True
-                else:
-                    message, message_ok = f"Gespeichert, aber Neustart fehlgeschlagen: {restart['detail']}", False
-            else:
-                message, message_ok = "Gespeichert. can-node läuft nicht, wurde nicht neu gestartet.", True
-
-    # Vorschlagsliste für Senden-Felder (TA-Netzwerkausgänge): alle vito.xml-Variablen, nicht nur
-    # die bereits einem Zyklus zugeordneten -- eine Variable OHNE Zyklus hat aber (noch) keinen
-    # aktuellen Wert auf heizung/<name> und sendet daher nichts, bis sie auf der
-    # Vcontrold-Seite (Abschnitt "MQTT-Konfiguration") einem Zyklus zugeordnet wird.
+    # Vorschlagsliste: alle vito.xml-Variablen, nicht nur die bereits einem Zyklus zugeordneten --
+    # eine Variable OHNE Zyklus hat aber (noch) keinen aktuellen Wert auf heizung/<name> und
+    # sendet daher nichts, bis sie auf der Vitotronic-Seite einem Zyklus zugeordnet wird.
     available_subtopics = set(vito_vars.keys())
     for cycle in load_read_cycles().values():
         available_subtopics.update(cycle.get("variables", []))
@@ -405,30 +452,36 @@ def can_settings():
     ta_net_analog = (ta_net_outputs.get("analog", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
     ta_net_digital = (ta_net_outputs.get("digital", []) + [None] * TA_NETWORK_OUTPUT_SLOTS)[:TA_NETWORK_OUTPUT_SLOTS]
 
-    # Vorschlagsliste für Empfangs-Kanalnamen ("existierende Variable" statt neuer Name): bereits
-    # verwendete Kanäle aus allen rx-Wegen + alle CAN-only-Variablen aus der MQTT-Variablen-Seite
-    # (Name nicht in vito.xml). Freies Eintippen bleibt möglich (Datalist erzwingt nichts), das
-    # deckt "neu anzulegende Variable" ab.
-    existing_uvr_topics = set()
-    for key in ("rx_ta_analog_outputs", "rx_ta_digital_outputs"):
-        existing_uvr_topics.update(mapping.get(key, {}).get("outputs", {}).values())
-    existing_uvr_topics.update(mapping.get("sdo_record", {}).get("slots", {}).values())
-    existing_uvr_topics.update(k for k in mqtt_variables if k not in vito_vars)
-
     return render_template(
-        "can_settings.html",
-        bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
-        rx_ta_analog_can_id=mapping.get("rx_ta_analog_outputs", {}).get("can_id", ""),
-        rx_ta_analog_rows=build_ta_rx_output_rows(mapping.get("rx_ta_analog_outputs")),
-        rx_ta_digital_can_id=mapping.get("rx_ta_digital_outputs", {}).get("can_id", ""),
-        rx_ta_digital_rows=build_ta_rx_output_rows(mapping.get("rx_ta_digital_outputs")),
-        ta_rx_output_slots=TA_RX_OUTPUT_SLOTS,
-        uvr_topics=sorted(existing_uvr_topics),
-        own_node_number=mapping.get("own_node_number", 1),
+        "can_ausgaenge.html",
         total_slots=TA_NETWORK_OUTPUT_SLOTS,
         available_subtopics=sorted(available_subtopics),
         ta_net_analog=ta_net_analog,
         ta_net_digital=ta_net_digital,
+        message=message,
+        message_ok=message_ok,
+    )
+
+
+@app.route("/can/configuration", methods=["GET", "POST"])
+def can_configuration_page():
+    """CAN-Bereich, Unterseite 'Configuration': Bitrate + eigene Knoten-Nummer."""
+    message = None
+    message_ok = None
+    mapping = load_can_mapping()
+
+    if request.method == "POST":
+        new_values = {
+            "bitrate": int(request.form.get("bitrate", proto.DEFAULT_BITRATE) or proto.DEFAULT_BITRATE),
+            "own_node_number": int(request.form.get("own_node_number", 1) or 1),
+        }
+        mapping = save_can_mapping_partial(new_values, {"bitrate", "own_node_number"})
+        message, message_ok = restart_can_node_if_active()
+
+    return render_template(
+        "can_configuration.html",
+        bitrate=mapping.get("bitrate", proto.DEFAULT_BITRATE),
+        own_node_number=mapping.get("own_node_number", 1),
         message=message,
         message_ok=message_ok,
     )
@@ -1085,10 +1138,20 @@ def vcontrold_debug_log():
     return jsonify({"log": tail_file(VCONTROLD_DEBUG_LOG_PATH, 200)})
 
 
-@app.route("/can-sniffer", methods=["GET"])
+@app.route("/can-sniffer")
 def can_sniffer_page():
+    """Abgelöst durch /can/logging -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("can_logging_page"))
+
+
+@app.route("/can/logging")
+def can_logging_page():
+    """CAN-Bereich, Unterseite 'Logging': CAN-Interface-Status plus CAN-Sniffer (zeichnet für die
+    angegebene Dauer alle Frames auf, siehe can_sniffer_capture()) -- vorher eigenständige Seite
+    /can-sniffer, jetzt Teil des CAN-Bereichs."""
     cfg = get_ui_config()
-    return render_template("can_sniffer.html", cfg=cfg)
+    can_status = diagnostics.can_link_status(cfg["can_interface"])
+    return render_template("can_logging.html", cfg=cfg, can_status=can_status)
 
 
 @app.route("/can-sniffer/capture", methods=["POST"])

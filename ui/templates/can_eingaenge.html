@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}CAN: Eingänge - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>CAN: Eingänge</h1>
+
+<div class="section-layout">
+  {{ m.can_section_nav('eingaenge') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p>Liest die tatsächlichen "CAN-Analogausgänge"/"CAN-Digitalausgänge" der UVR direkt (siehe
+         README Abschnitt 3.4/3.5) -- je eine CAN-ID für alle 16 Ausgänge einer Spalte, per
+         <a href="{{ url_for('can_logging_page') }}">CAN-Sniffer</a> ermitteln. Kanalname per
+         Dropdown aus bestehenden Variablen wählen oder frei eintippen (legt bei Bedarf eine neue
+         MQTT-Variable an). Digital published <code>"ON"</code>/<code>"OFF"</code>. Soll ein Wert
+         zusätzlich einen echten Set-Befehl in der Vitotronic auslösen, auf der
+         <a href="{{ url_for('mqtt_vitotronic_page') }}">MQTT &gt; Vitotronic</a>-Seite unter
+         "Set-Weiterleitung" einrichten.</p>
+    </div>
+
+    <form method="post">
+      <div class="card live-refresh-row">
+        <button type="button" id="refresh-live-values">🔄 Live-Werte aktualisieren</button>
+        <button type="submit" onclick="return confirm('CAN-Eingänge speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
+        <span style="font-size:0.8rem;color:#666;">Zeigt den aktuellen MQTT-Wert neben jedem ausgefüllten Variablenfeld (kurzer Snapshot, keine Dauerverbindung).</span>
+      </div>
+
+      <datalist id="uvr-topics">
+        {% for s in uvr_topics %}
+        <option value="{{ s }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <details class="config-file-block wide-block" open>
+        <summary>CAN-Analog-/Digitalausgänge empfangen (bestätigtes Format)</summary>
+        <div class="can-id-row">
+          <label for="rx_ta_analog_can_id">CAN-ID Analog (gemeinsam für alle Ausgänge)</label>
+          <input type="text" id="rx_ta_analog_can_id" name="rx_ta_analog_outputs_can_id" value="{{ rx_ta_analog_can_id }}" placeholder="0x1ca">
+          <label for="rx_ta_digital_can_id">CAN-ID Digital (= <code>0x180 + UVR-eigene Node-ID</code>, nicht die "Eigene Knoten-Nummer" auf der Configuration-Seite)</label>
+          <input type="text" id="rx_ta_digital_can_id" name="rx_ta_digital_outputs_can_id" value="{{ rx_ta_digital_can_id }}" placeholder="0x18a">
+        </div>
+        <table class="canvar-table">
+          <tr><th>Ausgang</th><th>Analog: Variable</th><th>Digital: Variable</th></tr>
+          {% for i in range(ta_rx_output_slots) %}
+          <tr>
+            <td>{{ i + 1 }}</td>
+            <td><input type="text" name="rx_ta_analog_outputs_slot_topic_{{ i }}" value="{{ rx_ta_analog_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname" data-live></td>
+            <td><input type="text" name="rx_ta_digital_outputs_slot_topic_{{ i }}" value="{{ rx_ta_digital_rows[i].topic }}" list="uvr-topics" placeholder="uvr_kanalname" data-live></td>
+          </tr>
+          {% endfor %}
+        </table>
+      </details>
+    </form>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+<style>
+  .can-id-row { background: #eef2f5; border-radius: 4px; padding: 0.4rem 0.5rem; margin: 0.6rem 0 0.4rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+  .can-id-row label { font-size: 0.75rem; font-weight: 600; margin: 0 0 0.2rem; }
+  .can-id-row input { margin-bottom: 0.5rem; }
+</style>
+
+<script>
+attachLiveValues(document.getElementById('refresh-live-values'), document.body);
+</script>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}CAN: Configuration - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>CAN: Configuration</h1>
+
+<div class="section-layout">
+  {{ m.can_section_nav('configuration') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p>Konfiguriert <code>config/can_mapping.json</code>: Bitrate und eigene Knoten-Nummer.
+         Neue schreibbare CAN-Variablen (unabhängig von vito.xml, Home Assistant ↔ UVR ohne
+         Vitotronic) legst du auf der eigenständigen
+         <a href="{{ url_for('mqtt_home_assistant_page') }}">MQTT &gt; Home Assistant</a>-Seite an.</p>
+    </div>
+
+    <form method="post">
+      <div class="card live-refresh-row">
+        <button type="submit" onclick="return confirm('CAN-Grundeinstellungen speichern und can-node (falls aktiv) neu starten?');">Speichern &amp; can-node neu starten</button>
+      </div>
+
+      <details class="config-file-block" open>
+        <summary>Grundeinstellungen</summary>
+        <label for="bitrate">CAN-Bitrate</label>
+        <select id="bitrate" name="bitrate">
+          {% for rate in [5000, 10000, 20000, 50000, 125000, 250000, 500000] %}
+          <option value="{{ rate }}" {% if bitrate == rate %}selected{% endif %}>
+            {{ rate // 1000 }} kBit/s{% if rate == 50000 %} (UVR16x2-Standard){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+
+        <label for="own_node_number">Eigene Knoten-Nummer</label>
+        <input type="number" id="own_node_number" name="own_node_number" value="{{ own_node_number }}" min="1" max="62">
+      </details>
+    </form>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
