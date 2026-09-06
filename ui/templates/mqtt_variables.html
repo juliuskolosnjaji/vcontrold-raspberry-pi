@@ -5,13 +5,11 @@
 <h1>MQTT-Variablen</h1>
 
 <div class="card">
-  <p>Zentrale Definition aller MQTT-Variablen: für vito.xml-Variablen an einer Stelle Zyklus-
-     Zuordnung, Anzeigename in Home Assistant und ob/wie sie per MQTT setzbar ist. Unabhängig
-     davon, ob der Wert aus vito.xml (Vcontrold) oder direkt von CAN stammt -- weder Bestandteil
-     der <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>- noch der
-     <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite. Die Zyklen selbst (Name/
-     Intervall) bleiben auf der Vcontrold-Seite; welche CAN-ID/welcher Sendekanal eine Variable
-     nutzt, bleibt auf der CAN-Einstellungen-Seite.</p>
+  <p>Custom-CAN-Variablen (Name existiert nicht in vito.xml) und Set-Weiterleitung. Zyklus-
+     Zuordnung, Anzeigename und Home-Assistant-Konfiguration für <strong>vito.xml-Variablen</strong>
+     sind jetzt auf der <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite
+     zu finden. Konfiguration von CAN-IDs/Sendekanälen bleibt auf der
+     <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite.</p>
 </div>
 
 <div class="card live-refresh-row">
@@ -20,76 +18,6 @@
 </div>
 
 <form method="post">
-  <details class="config-file-block wide-block" open>
-    <summary>vito.xml-Variablen</summary>
-    <p>Erscheint automatisch, sobald vito.xml einen Getter dafür hat. "Zyklus" legt fest, ob (und
-       wie oft) die Variable tatsächlich von der Vitotronic gelesen und als
-       <code>heizung/&lt;Name&gt;</code> published wird -- ohne Zyklus ("— keiner —") steht nie ein
-       Wert bereit. Die Zyklen selbst (Name/Intervall) werden auf der
-       <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-Seite verwaltet. "Anzeigename" ändert
-       nur den in Home Assistant angezeigten Namen (leer = automatisch aus dem Variablennamen
-       abgeleitet), <code>getTempKsoll</code>/<code>setTempKsoll</code> bleiben unverändert.
-       "Schreibbar" ist nur wählbar, wenn vito.xml einen Setter hat -- macht die Variable per
-       <code>heizung/cmd/&lt;Name&gt;</code> setzbar (Home Assistant und/oder CAN-Weiterleitung).</p>
-    <input type="text" id="vitovar-filter" placeholder="🔍 Filtern nach Name…" style="max-width:300px;">
-    <table class="variables-table" id="vitovar-table">
-      <tr>
-        <th>Variable</th>
-        <th>Get</th>
-        <th>Set</th>
-        <th>Zyklus</th>
-        <th>Anzeigename in HA</th>
-        <th>Schreibbar?</th>
-        <th colspan="4">Discovery</th>
-      </tr>
-      {% for row in vito_rows %}
-      <tr class="{{ 'no-set' if not row.has_setter }}">
-        <td><strong>{{ row.friendly_name }}</strong><br><code>{{ row.name }}</code> <span class="live-badge" data-live data-live-name="{{ row.name }}"></span></td>
-        <td>{{ row['get'] or "—" }}</td>
-        <td>{{ row.set or "—" }}</td>
-        <td>
-          <select name="var_cycle_{{ row.name }}">
-            <option value="" {% if row.cycle_index is none %}selected{% endif %}>— keiner —</option>
-            {% for i in num_cycles %}
-            <option value="{{ i }}" {% if row.cycle_index == i %}selected{% endif %}>{{ cycle_rows[i].name or ('Zyklus ' ~ (i + 1)) }}</option>
-            {% endfor %}
-          </select>
-        </td>
-        <td>
-          <input type="text" name="vitovar_display_{{ row.name }}" value="{{ row.display_name }}" placeholder="{{ row.friendly_name }}">
-        </td>
-        {% if row.has_setter %}
-        <td>
-          <label style="width:auto;display:inline-block;">
-            <input type="checkbox" name="vitovar_writable_{{ row.name }}" value="1" class="writable-toggle" {% if row.writable %}checked{% endif %} style="width:auto;display:inline-block;">
-          </label>
-        </td>
-        <td class="discovery-field">
-          <select name="vitovar_component_{{ row.name }}" class="discovery-component" {% if not row.writable %}disabled{% endif %}>
-            <option value="number" {% if row.component == "number" %}selected{% endif %}>Number</option>
-            <option value="select" {% if row.component == "select" %}selected{% endif %}>Select</option>
-            <option value="switch" {% if row.component == "switch" %}selected{% endif %}>Switch (An/Aus)</option>
-          </select>
-        </td>
-        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
-          <input type="text" name="vitovar_unit_{{ row.name }}" value="{{ row.unit }}" placeholder="Einheit z.B. °C" {% if not row.writable %}disabled{% endif %}>
-        </td>
-        <td class="discovery-field discovery-number" {% if row.component != "number" %}style="display:none"{% endif %}>
-          <input type="text" name="vitovar_min_{{ row.name }}" value="{{ row.min }}" placeholder="Min" {% if not row.writable %}disabled{% endif %}>
-          <input type="text" name="vitovar_max_{{ row.name }}" value="{{ row.max }}" placeholder="Max" {% if not row.writable %}disabled{% endif %}>
-          <input type="text" name="vitovar_step_{{ row.name }}" value="{{ row.step }}" placeholder="Step" {% if not row.writable %}disabled{% endif %}>
-        </td>
-        <td class="discovery-field discovery-select" {% if row.component != "select" %}style="display:none"{% endif %}>
-          <input type="text" name="vitovar_options_{{ row.name }}" value="{{ row.options }}" placeholder="Option1, Option2, ..." {% if not row.writable %}disabled{% endif %}>
-        </td>
-        {% else %}
-        <td colspan="5" class="no-set-cell">kein Setter in vito.xml → nicht schreibbar</td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </table>
-  </details>
-
   <details class="config-file-block wide-block" open>
     <summary>Custom CAN-Variablen (Home Assistant ↔ UVR, ohne Vitotronic)</summary>
     <p>Name existiert NICHT in vito.xml. Komplett unabhängig von vito.xml/vcontrold: Home Assistant
@@ -181,8 +109,9 @@
        <a href="{{ url_for('can_settings') }}">CAN-Einstellungen</a>-Seite: dort einfach den
        Variablennamen eintragen, fertig -- er wird automatisch bei jeder Änderung gesendet, ohne
        dass hier zusätzlich etwas konfiguriert werden muss. Deshalb akzeptiert das "Ziel"-Feld
-       hier ausschließlich Vitotronic-Parameter, die oben als "Schreibbar" aktiviert sind -- ein
-       CAN-Ziel würde hier ohnehin nie tatsächlich am CAN-Bus ankommen.</p>
+       hier ausschließlich Vitotronic-Parameter, die auf der
+       <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite als "Schreibbar"
+       aktiviert sind -- ein CAN-Ziel würde hier ohnehin nie tatsächlich am CAN-Bus ankommen.</p>
     <table class="canvar-table">
       <tr><th>Quelle (beliebige MQTT-Variable)</th><th></th><th>Ziel (Vitotronic-Parameter setzen)</th><th></th></tr>
       <tbody id="mapping-tbody">
@@ -205,9 +134,9 @@
       </tbody>
     </table>
     {% if not settable_targets %}
-    <p><em>Noch keine schreibbaren Vitotronic-Parameter registriert -- weiter oben bei einer
-       vito.xml-Variable mit Setter "Schreibbar" aktivieren, dann steht sie hier als Ziel zur
-       Auswahl.</em></p>
+    <p><em>Noch keine schreibbaren Vitotronic-Parameter registriert -- auf der
+       <a href="{{ url_for('vitotronic_variablen_page') }}">Vitotronic</a>-Seite bei einer
+       Variable mit Setter "Schreibbar" aktivieren, dann steht sie hier als Ziel zur Auswahl.</em></p>
     {% endif %}
     <button type="button" id="add-mapping-row">+ Zeile hinzufügen</button>
   </details>
@@ -246,28 +175,6 @@
 {% endif %}
 
 <script>
-// Discovery-Felder je Zeile nur bei aktiviertem "Schreibbar"-Häkchen aktiv/sichtbar, und
-// innerhalb dessen nur die zur gewählten Komponente (number/select) passenden Felder.
-document.querySelectorAll('.writable-toggle').forEach(function (toggle) {
-  const row = toggle.closest('tr');
-  const componentSelect = row.querySelector('.discovery-component');
-
-  function update() {
-    const writable = toggle.checked;
-    const component = componentSelect.value;
-    row.querySelectorAll('.discovery-field').forEach(function (el) {
-      el.querySelectorAll('input, select').forEach(input => input.disabled = !writable);
-    });
-    componentSelect.disabled = !writable;
-    row.querySelectorAll('.discovery-number').forEach(el => el.style.display = (writable && component === 'number') ? '' : 'none');
-    row.querySelectorAll('.discovery-select').forEach(el => el.style.display = (writable && component === 'select') ? '' : 'none');
-  }
-
-  toggle.addEventListener('change', update);
-  componentSelect.addEventListener('change', update);
-  update();
-});
-
 function attachCanvarComponentHandler(row) {
   const select = row.querySelector('.canvar-component');
   function update() {
@@ -308,14 +215,5 @@ document.getElementById('add-mapping-row').addEventListener('click', function ()
 });
 
 attachLiveValues(document.getElementById('refresh-live-values'), document.body);
-
-// Filter für die vito.xml-Variablen-Tabelle (kann je nach Geräte-XML weit über 50 Zeilen haben) --
-// blendet Zeilen aus, deren sichtbarer Text nicht zum eingegebenen Suchbegriff passt.
-document.getElementById('vitovar-filter').addEventListener('input', function () {
-  const term = this.value.trim().toLowerCase();
-  document.querySelectorAll('#vitovar-table tr:not(:first-child)').forEach(function (row) {
-    row.style.display = !term || row.textContent.toLowerCase().includes(term) ? '' : 'none';
-  });
-});
 </script>
 {% endblock %}

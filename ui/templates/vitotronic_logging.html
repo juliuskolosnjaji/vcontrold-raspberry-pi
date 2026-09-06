@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Vitotronic: Logging - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Vitotronic: Logging</h1>
+
+<div class="section-layout">
+  {{ m.section_nav('logging') }}
+  <div class="section-content">
+
+    <div class="card">
+      <p>Rohes Protokoll-Log aus <code>/tmp/vcontrold.log</code> (letzte 200 Zeilen) -- zeigt die
+         tatsächlichen Get/Set-Kommandos und Werte, die vcontrold mit der Vitotronic austauscht
+         (<code>-g/--debug</code> in <code>systemd/vcontrold.service</code> aktiviert dieses
+         Logging; ohne diesen Flag stehen dort nur Verbindungsaufbauten). Sehr detailliert/
+         bytebasiert -- relevante Zeilen sind z.B. <code>Command: getXYZ</code> und
+         <code>&lt;wert&gt; -&gt; &lt;dekodierter Wert&gt;</code>.</p>
+      <button type="button" onclick="loadVcontroldLog()">Log aktualisieren</button>
+      <label style="display:inline-block; width:auto; margin-left:1rem;">
+        <input type="checkbox" id="log-autorefresh" style="width:auto; display:inline-block;" onchange="toggleAutoRefresh()">
+        automatisch alle 5s aktualisieren
+      </label>
+      <pre id="vcontrold-log-output">(noch nicht geladen — "Log aktualisieren" klicken)</pre>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  #vcontrold-log-output { max-height: 500px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
+</style>
+
+<script>
+let vcontroldLogTimer = null;
+
+function loadVcontroldLog() {
+  fetch('/vcontrold/log')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('vcontrold-log-output').textContent = data.log || data.error;
+    });
+}
+
+function toggleAutoRefresh() {
+  const checked = document.getElementById('log-autorefresh').checked;
+  if (vcontroldLogTimer) {
+    clearInterval(vcontroldLogTimer);
+    vcontroldLogTimer = null;
+  }
+  if (checked) {
+    loadVcontroldLog();
+    vcontroldLogTimer = setInterval(loadVcontroldLog, 5000);
+  }
+}
+
+loadVcontroldLog();
+</script>
+{% endblock %}

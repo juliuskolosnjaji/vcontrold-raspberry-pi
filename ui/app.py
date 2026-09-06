@@ -149,12 +149,6 @@ def console():
                 cfg["vclient_host"], cfg["vclient_port"], executed_command
             )
 
-        if request.form.get("return_to") == "vcontrold":
-            if result:
-                category = "message-ok" if result["ok"] else "message-error"
-                flash(f"Konsole ({executed_command}): {result['output']}", category)
-            return redirect(url_for("vcontrold_page") + "#konsole")
-
     return render_template(
         "console.html",
         cfg=cfg,
@@ -235,12 +229,6 @@ def config_page():
                     message, message_ok = finish_vcontrold_restart(
                         f"{path.name} gespeichert", also_restart_orchestrator=(target == "device")
                     )
-
-        if request.form.get("return_to") == "vcontrold":
-            if message:
-                flash(message, "message-ok" if message_ok else "message-error")
-            anchor = "vcontrold-xml" if target == "main" else "vito-xml"
-            return redirect(url_for("vcontrold_page") + f"#{anchor}")
 
     main_content = main_path.read_text() if main_path.exists() else ""
     device_content = device_path.read_text() if device_path is not None and device_path.exists() else ""
@@ -541,15 +529,6 @@ def build_variable_cycle_index(cycles: dict) -> dict:
     return variable_cycle_index
 
 
-def build_variables_view_data(cfg: dict, variables: dict, cycles: dict, mqtt_variables: dict) -> dict:
-    """Baut cycle_rows/rows fürs Zyklen-Template aus den geladenen Rohdaten -- gemeinsam genutzt
-    von variables_page() (GET) und vcontrold_page() (eingebettete Ansicht), damit beide garantiert
-    dieselbe Aufbereitung zeigen. Get/Set/Zyklus-Zuordnung je Variable werden inzwischen auf der
-    MQTT-Variablen-Seite gepflegt (siehe mqtt_variables_page()) -- hier nur noch die
-    Zyklus-Definitionen selbst (Name/Intervall)."""
-    return {"cycle_rows": build_cycle_rows(cycles), "num_cycles": range(CYCLE_COUNT)}
-
-
 def build_vito_override_data(cfg: dict, variables: dict) -> dict:
     """Berechnet die Grundlage für den Abschnitt 'Get/Set-Zuordnung überschreiben': vito.xml-
     Kommandos, die NICHT der getXXX/setXXX-Namenskonvention folgen (oder aus einem anderen Grund
@@ -578,8 +557,8 @@ BLANK_OVERRIDE_ROWS = 0  # keine vorab gerenderten Leerzeilen mehr (führten zu 
 def vito_overrides_page():
     """Speichert manuelle Get/Set-Zuordnungen (config/vito_command_overrides.json) für vito.xml-
     Kommandos, die nicht der getXXX/setXXX-Namenskonvention folgen -- siehe
-    vito_variables.load_variables()/build_vito_override_data(). Eingebettet in variables.html/
-    vcontrold.html, kein eigener GET-Seitenaufruf nötig."""
+    vito_variables.load_variables()/build_vito_override_data(). Eingebettet in variables.html,
+    kein eigener GET-Seitenaufruf nötig."""
     cfg = get_ui_config()
     raw_command_names = {c["name"] for c in vito_variables.try_list_raw_commands(cfg["device_xml"])}
     errors = []
@@ -624,8 +603,6 @@ def vito_overrides_page():
         message_ok = True
 
     flash(message, "message-ok" if message_ok else "message-error")
-    if request.form.get("return_to") == "vcontrold":
-        return redirect(url_for("vcontrold_page") + "#variablen")
     return redirect(url_for("variables_page"))
 
 
@@ -636,17 +613,13 @@ def variables_page():
     cfg = get_ui_config()
     variables = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
     cycles = load_read_cycles()
-    mqtt_variables = mqtt_vars.load()
-
-    # Bestehende Zyklen auf die 4 festen Slots abbilden (Reihenfolge = Einfüge-Reihenfolge in der JSON)
-    cycle_names = list(cycles.keys())
 
     if request.method == "POST":
         errors = []
 
         # Diese Seite bearbeitet nur Name/Intervall der Zyklen selbst -- welche Variable zu
-        # welchem Zyklus gehört, wird auf der MQTT-Variablen-Seite gepflegt (siehe
-        # mqtt_variables_page()). Die bestehende Variablen-Zuordnung je Slot-Index bleibt deshalb
+        # welchem Zyklus gehört, wird auf der Vitotronic-Variablen-Seite gepflegt (siehe
+        # vitotronic_variablen_page()). Die bestehende Variablen-Zuordnung je Slot-Index bleibt deshalb
         # unverändert erhalten, statt sie (mangels entsprechender Formularfelder hier) auf leer
         # zurückzusetzen.
         old_cycle_rows = build_cycle_rows(cycles)
@@ -678,7 +651,6 @@ def variables_page():
                           for c in cycle_defs if c is not None}
             atomic_io.write_json(READ_CYCLES_PATH, new_cycles)
             cycles = new_cycles
-            cycle_names = list(cycles.keys())
 
             restarted = []
             for service in ("orchestrator",):
@@ -690,61 +662,23 @@ def variables_page():
             message = "Gespeichert." + (f" Neu gestartet: {', '.join(restarted)}." if restarted else "")
             message_ok = True
 
-        if request.form.get("return_to") == "vcontrold":
-            if message:
-                flash(message, "message-ok" if message_ok else "message-error")
-            return redirect(url_for("vcontrold_page") + "#zyklen")
-
     return render_template(
         "variables.html",
         device_xml=cfg["device_xml"],
         message=message,
         message_ok=message_ok,
         post_action=url_for("variables_page"),
-        **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
+        cycle_rows=build_cycle_rows(cycles),
+        num_cycles=range(CYCLE_COUNT),
         **build_vito_override_data(cfg, variables),
     )
 
 
 @app.route("/vcontrold")
 def vcontrold_page():
-    """Gebündelte Seite: Vcontrold-Konfiguration (vcontrold.xml), Konsole, vito.xml, Variablen
-    und ein Live-Log der Vitotronic-Kommunikation, je in einem eigenen aufklappbaren Abschnitt.
-    Jeder Abschnitt postet weiterhin an seine eigene, unveränderte Route (/config, /console,
-    /variables) -- die erkennen am 'return_to'-Feld, dass sie hierher zurückleiten sollen, statt
-    ihre eigene Standalone-Seite zu rendern (die unter /config, /console, /variables weiterhin
-    einzeln erreichbar bleiben)."""
-    cfg = get_ui_config()
-
-    main_path = pathlib.Path(cfg["vcontrold_main_xml"])
-    device_path = pathlib.Path(cfg["device_xml"]) if cfg["device_xml"] else None
-    main_content = main_path.read_text() if main_path.exists() else ""
-    device_content = device_path.read_text() if device_path is not None and device_path.exists() else ""
-
-    commands = xml_parser.try_extract_commands(cfg["device_xml"])
-
-    variables = vito_variables.try_load_variables(cfg["device_xml"])
-    cycles = load_read_cycles()
-    mqtt_variables = mqtt_vars.load()
-
-    return render_template(
-        "vcontrold.html",
-        cfg=cfg,
-        main_path=str(main_path),
-        device_path=str(device_path) if device_path else None,
-        main_content=main_content,
-        device_content=device_content,
-        commands=commands,
-        result=None,
-        executed_command="",
-        device_xml=cfg["device_xml"],
-        post_action_config=url_for("config_page"),
-        post_action_console=url_for("console"),
-        post_action_variables=url_for("variables_page"),
-        post_action_vito_overrides=url_for("vito_overrides_page"),
-        **build_variables_view_data(cfg, variables, cycles, mqtt_variables),
-        **build_vito_override_data(cfg, variables),
-    )
+    """Abgelöst durch den Vitotronic-Bereich mit eigener Seitenleiste (Variablen/Zyklus/Konsole/
+    Configuration/Logging, siehe section_nav()-Makro) -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("vitotronic_variablen_page"))
 
 
 BLANK_CUSTOM_VARIABLE_ROWS = 0  # keine vorab gerenderten Leerzeilen mehr (versehentlich als
@@ -768,26 +702,27 @@ def build_mqtt_variable_rows(entry: dict) -> dict:
     }
 
 
-@app.route("/mqtt-variables", methods=["GET", "POST"])
-def mqtt_variables_page():
-    """Eigenständige Seite (siehe README 'MQTT-Architektur'): definiert für jede vito.xml-Variable
-    an einer Stelle Zyklus-Zuordnung (welcher Read-Zyklus liest sie), Anzeigename und
-    Home-Assistant-Discovery-Konfiguration (ob/wie sie per MQTT setzbar ist) -- vorher auf zwei
-    getrennte Seiten verteilt (Vcontrold-Seite für den Zyklus, hier für den Rest), was denselben
-    Variablennamen zweimal in unterschiedlichen Tabellen zeigte. Die Zyklen selbst (Name/Intervall)
-    bleiben auf der Vcontrold-Seite (siehe variables_page()), Konfiguration von CAN-IDs/
-    Sendekanälen bleibt auf der CAN-Einstellungen-Seite."""
+@app.route("/vitotronic/variablen", methods=["GET", "POST"])
+def vitotronic_variablen_page():
+    """Vitotronic-Bereich, Unterseite 'Variablen' (siehe section_nav()-Makro): definiert für jede
+    vito.xml-Variable an einer Stelle Zyklus-Zuordnung (welcher Read-Zyklus liest sie),
+    Anzeigename und Home-Assistant-Discovery-Konfiguration (ob/wie sie per MQTT setzbar ist) --
+    vorher auf zwei getrennte Seiten verteilt (Vcontrold-Seite für den Zyklus, MQTT-Variablen-
+    Seite für den Rest), was denselben Variablennamen zweimal in unterschiedlichen Tabellen
+    zeigte. Custom-CAN-Variablen (Name nicht in vito.xml) und Set-Weiterleitung bleiben auf der
+    eigenständigen MQTT-Variablen-Seite (siehe mqtt_variables_page()) -- daher beim Speichern
+    hier nur die vito.xml-Einträge in mqtt_variables.json ersetzen, alles andere unverändert
+    übernehmen (sonst würde ein Speichern hier Custom-CAN-Variablen löschen)."""
     message = None
     message_ok = None
     cfg = get_ui_config()
     vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
     mqtt_variables = mqtt_vars.load()
     cycles = load_read_cycles()
-    cycle_names = list(cycles.keys())
 
     if request.method == "POST":
         errors = []
-        new_variables = {}
+        new_vito_entries = {}
 
         for var_name, cmds in vito_vars.items():
             display_name = request.form.get(f"vitovar_display_{var_name}", "").strip()
@@ -797,10 +732,10 @@ def mqtt_variables_page():
             if cmds.get("set") and request.form.get(f"vitovar_writable_{var_name}") == "1":
                 entry["discovery"] = parse_discovery_fields("vitovar", var_name, f"'{var_name}'", errors)
             if entry:
-                new_variables[var_name] = entry
+                new_vito_entries[var_name] = entry
 
         # Zyklus-Zuordnung: bestehende Zyklus-Definitionen (Name/Intervall, gepflegt auf der
-        # Vcontrold-Seite) bleiben unverändert -- hier wird pro Slot-Index nur die Liste der
+        # Zyklus-Unterseite) bleiben unverändert -- hier wird pro Slot-Index nur die Liste der
         # zugeordneten Variablen aus den var_cycle_<name>-Feldern neu aufgebaut.
         old_cycle_rows = build_cycle_rows(cycles)
         cycle_defs = [
@@ -818,6 +753,84 @@ def mqtt_variables_page():
                     cycle_defs[idx]["variables"].append(var_name)
         new_cycles = {c["name"]: {"interval_seconds": c["interval_seconds"], "variables": c["variables"]}
                       for c in cycle_defs if c is not None}
+
+        if errors:
+            message, message_ok = "\n".join(errors), False
+            mqtt_variables = {**mqtt_variables, **new_vito_entries}  # editierte Werte im Formular zeigen
+        else:
+            # Custom-CAN-Variablen (Name nicht in vito_vars) unangetastet lassen, nur die
+            # vito.xml-Einträge ersetzen -- ein einfaches mqtt_vars.save(new_vito_entries) würde
+            # sonst alle auf der MQTT-Variablen-Seite angelegten Custom-Variablen löschen.
+            merged = {k: v for k, v in mqtt_variables.items() if k not in vito_vars}
+            merged.update(new_vito_entries)
+            mqtt_vars.save(merged)
+            mqtt_variables = merged
+            atomic_io.write_json(READ_CYCLES_PATH, new_cycles)
+            cycles = new_cycles
+
+            restarted = []
+            status = diagnostics.service_status("orchestrator")
+            if status["state"] == "active":
+                result = diagnostics.restart_service("orchestrator")
+                if result["ok"]:
+                    restarted.append("orchestrator")
+            message = "Gespeichert." + (f" Neu gestartet: {', '.join(restarted)}." if restarted else "")
+            message_ok = True
+
+    variable_cycle_index = build_variable_cycle_index(cycles)
+    cycle_rows = build_cycle_rows(cycles)
+
+    vito_rows = []
+    for var_name, cmds in sorted(vito_vars.items()):
+        entry = mqtt_variables.get(var_name, {})
+        row = build_mqtt_variable_rows(entry)
+        # Set-Variablen sind direkt nach dem Erkennen aus vito.xml defaultmäßig aktiv (schreibbar)
+        # -- nur solange sie noch nie konfiguriert wurden (kein Eintrag in mqtt_variables.json).
+        # Sobald einmal gespeichert, gilt der explizit gespeicherte Zustand, auch wenn er "aus" ist.
+        if var_name not in mqtt_variables and cmds.get("set"):
+            row["writable"] = True
+        row["name"] = var_name
+        row["friendly_name"] = vito_variables.friendly_name(var_name)
+        row["get"] = cmds.get("get")
+        row["set"] = cmds.get("set")
+        row["has_setter"] = bool(cmds.get("set"))
+        row["cycle_index"] = variable_cycle_index.get(var_name)
+        vito_rows.append(row)
+
+    return render_template(
+        "vitotronic_variablen.html",
+        setter_rows=[r for r in vito_rows if r["has_setter"]],
+        getter_rows=[r for r in vito_rows if not r["has_setter"]],
+        cycle_rows=cycle_rows,
+        num_cycles=range(CYCLE_COUNT),
+        message=message,
+        message_ok=message_ok,
+    )
+
+
+@app.route("/vitotronic/logging")
+def vitotronic_logging_page():
+    """Vitotronic-Bereich, Unterseite 'Logging' -- zeigt dasselbe Debug-Log wie zuvor Abschnitt 6
+    der gebündelten Vcontrold-Seite (siehe /vcontrold/log), jetzt als eigenständige Seite."""
+    return render_template("vitotronic_logging.html")
+
+
+@app.route("/mqtt-variables", methods=["GET", "POST"])
+def mqtt_variables_page():
+    """Eigenständige Seite (siehe README 'MQTT-Architektur'): Custom-CAN-Variablen (Name nicht in
+    vito.xml, Home Assistant <-> UVR ohne Vitotronic) und Set-Weiterleitung. Zyklus-Zuordnung,
+    Anzeigename und Home-Assistant-Konfiguration für vito.xml-Variablen liegen auf der
+    eigenständigen Vitotronic-Seite (siehe vitotronic_variablen_page()); Konfiguration von
+    CAN-IDs/Sendekanälen bleibt auf der CAN-Einstellungen-Seite."""
+    message = None
+    message_ok = None
+    cfg = get_ui_config()
+    vito_vars = vito_variables.try_load_variables(cfg["device_xml"])  # {name: {"get":..., "set":...}}
+    mqtt_variables = mqtt_vars.load()
+
+    if request.method == "POST":
+        errors = []
+        new_variables = {k: v for k, v in mqtt_variables.items() if k in vito_vars}  # unverändert übernehmen
 
         # Zeilenindizes kommen aus den tatsächlich übermittelten Formularfeldern, nicht aus einem
         # festen Bereich -- die Custom-CAN-Variablen-Tabelle kann im Browser per "+ Zeile" beliebig
@@ -889,9 +902,6 @@ def mqtt_variables_page():
             mqtt_vars.save(new_variables)
             mqtt_variables = new_variables
             mqtt_mapping.save(new_mappings)
-            atomic_io.write_json(READ_CYCLES_PATH, new_cycles)
-            cycles = new_cycles
-            cycle_names = list(cycles.keys())
 
             restarted, failed = [], []
             for service in ("orchestrator", "can-node"):
@@ -906,26 +916,6 @@ def mqtt_variables_page():
             if failed:
                 message += f" Fehler beim Neustart von: {', '.join(failed)}."
             message_ok = not failed
-
-    variable_cycle_index = build_variable_cycle_index(cycles)
-    cycle_rows = build_cycle_rows(cycles)
-
-    vito_rows = []
-    for var_name, cmds in sorted(vito_vars.items()):
-        entry = mqtt_variables.get(var_name, {})
-        row = build_mqtt_variable_rows(entry)
-        # Set-Variablen sind direkt nach dem Erkennen aus vito.xml defaultmäßig aktiv (schreibbar)
-        # -- nur solange sie noch nie konfiguriert wurden (kein Eintrag in mqtt_variables.json).
-        # Sobald einmal gespeichert, gilt der explizit gespeicherte Zustand, auch wenn er "aus" ist.
-        if var_name not in mqtt_variables and cmds.get("set"):
-            row["writable"] = True
-        row["name"] = var_name
-        row["friendly_name"] = vito_variables.friendly_name(var_name)
-        row["get"] = cmds.get("get")
-        row["set"] = cmds.get("set")
-        row["has_setter"] = bool(cmds.get("set"))
-        row["cycle_index"] = variable_cycle_index.get(var_name)
-        vito_rows.append(row)
 
     custom_rows = []
     for name, entry in sorted(mqtt_variables.items()):
@@ -957,9 +947,6 @@ def mqtt_variables_page():
 
     return render_template(
         "mqtt_variables.html",
-        vito_rows=vito_rows,
-        cycle_rows=cycle_rows,
-        num_cycles=range(CYCLE_COUNT),
         custom_rows=custom_rows,
         next_custom_index=len(custom_rows),
         mapping_rows=mapping_rows,

@@ -1,30 +1,36 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
-{% block title %}Variablen - vcontrold UI{% endblock %}
+{% block title %}Zyklus - vcontrold UI{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-<h1>Variablen (aus {{ device_xml or "vito.xml (nicht konfiguriert)" }})</h1>
-<p><a href="{{ url_for('vcontrold_page') }}">→ Auch gebündelt auf der Vcontrold-Seite</a></p>
+<h1>Zyklus</h1>
 
-{{ m.cycles_config(cycle_rows, num_cycles, post_action) }}
+<div class="section-layout">
+  {{ m.section_nav('zyklus') }}
+  <div class="section-content">
 
-<p><a href="{{ url_for('mqtt_variables_page') }}">→ Variablen einem Zyklus zuordnen, Anzeigename und Home-Assistant-Konfiguration auf der MQTT-Variablen-Seite</a></p>
+    {{ m.cycles_config(cycle_rows, num_cycles, post_action) }}
 
-{% if unassigned_commands %}
-{{ m.vito_overrides_config(unassigned_commands, raw_commands, override_rows, url_for('vito_overrides_page')) }}
-{% endif %}
+    <p><a href="{{ url_for('vitotronic_variablen_page') }}">→ Variablen einem Zyklus zuordnen, Anzeigename und Home-Assistant-Konfiguration auf der Variablen-Seite</a></p>
 
-{% set flashes = get_flashed_messages(with_categories=true) %}
-{% if flashes %}
-{% for category, msg in flashes %}
-<div class="card">
-  <p class="{{ category }}">{{ msg }}</p>
+    {% if unassigned_commands %}
+    {{ m.vito_overrides_config(unassigned_commands, raw_commands, override_rows, url_for('vito_overrides_page')) }}
+    {% endif %}
+
+    {% set flashes = get_flashed_messages(with_categories=true) %}
+    {% if flashes %}
+    {% for category, msg in flashes %}
+    <div class="card">
+      <p class="{{ category }}">{{ msg }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
+  </div>
 </div>
-{% endfor %}
-{% endif %}
-{% if message %}
-<div class="card">
-  <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
-</div>
-{% endif %}
 {% endblock %}

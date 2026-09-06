@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
 {% block title %}Konsole - vcontrold UI{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block content %}
 <h1>Kommando-Konsole</h1>
-<p><a href="{{ url_for('vcontrold_page') }}">→ Auch gebündelt auf der Vcontrold-Seite</a></p>
 
-{{ m.console_form(commands, result, executed_command, post_action) }}
+<div class="section-layout">
+  {{ m.section_nav('konsole') }}
+  <div class="section-content">
+    {{ m.console_form(commands, result, executed_command, post_action) }}
+  </div>
+</div>
 {% endblock %}

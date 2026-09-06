@@ -5,33 +5,39 @@
 {% block content %}
 <h1>Vcontrold-Config verwalten</h1>
 
-<div class="card">
-  <p>Jede Datei kann entweder als Ganzes hochgeladen (importiert) oder direkt als Text bearbeitet
-     werden. Beim Speichern wird immer automatisch ein Backup der bisherigen Datei angelegt
-     (<code>&lt;datei&gt;.bak.&lt;timestamp&gt;</code>), das XML validiert und <code>vcontrold</code>
-     neu gestartet. Diese Bereiche findest du auch gebündelt mit Konsole, Variablen und Log auf der
-     <a href="{{ url_for('vcontrold_page') }}">Vcontrold</a>-Seite.</p>
-</div>
+<div class="section-layout">
+  {{ m.section_nav('configuration') }}
+  <div class="section-content">
 
-<details class="config-file-block" open>
-  <summary>vcontrold.xml <span class="config-file-path">{{ main_path }}</span></summary>
-  {{ m.xml_editor("main", main_content, "vcontrold.xml", post_action) }}
-</details>
+    <div class="card">
+      <p>Jede Datei kann entweder als Ganzes hochgeladen (importiert) oder direkt als Text bearbeitet
+         werden. Beim Speichern wird immer automatisch ein Backup der bisherigen Datei angelegt
+         (<code>&lt;datei&gt;.bak.&lt;timestamp&gt;</code>), das XML validiert und <code>vcontrold</code>
+         neu gestartet.</p>
+    </div>
 
-<details class="config-file-block" open>
-  <summary>vito.xml <span class="config-file-path">{{ device_path or "nicht konfiguriert (DEVICE_XML_PATH in ui.env setzen)" }}</span></summary>
-  {% if device_path %}
-  {{ m.xml_editor("device", device_content, "vito.xml", post_action) }}
-  {% else %}
-  <div class="config-file-body">
-    <p><em>DEVICE_XML_PATH ist in ui.env nicht gesetzt — vito.xml kann hier nicht bearbeitet werden.</em></p>
+    <details class="config-file-block" open>
+      <summary>vcontrold.xml <span class="config-file-path">{{ main_path }}</span></summary>
+      {{ m.xml_editor("main", main_content, "vcontrold.xml", post_action) }}
+    </details>
+
+    <details class="config-file-block" open>
+      <summary>vito.xml <span class="config-file-path">{{ device_path or "nicht konfiguriert (DEVICE_XML_PATH in ui.env setzen)" }}</span></summary>
+      {% if device_path %}
+      {{ m.xml_editor("device", device_content, "vito.xml", post_action) }}
+      {% else %}
+      <div class="config-file-body">
+        <p><em>DEVICE_XML_PATH ist in ui.env nicht gesetzt — vito.xml kann hier nicht bearbeitet werden.</em></p>
+      </div>
+      {% endif %}
+    </details>
+
+    {% if message %}
+    <div class="card">
+      <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
+    </div>
+    {% endif %}
+
   </div>
-  {% endif %}
-</details>
-
-{% if message %}
-<div class="card">
-  <p class="{{ 'message-ok' if message_ok else 'message-error' }}">{{ message }}</p>
 </div>
-{% endif %}
 {% endblock %}

@@ -55,6 +55,14 @@ main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
 }
 .config-file-block.wide-block { max-width: none; }
 
+/* Bereichs-Seitenleiste (Vitotronic/MQTT/CAN, siehe section_nav()-Makro in _macros.html) */
+.section-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+.section-sidebar { flex: 0 0 150px; background: #263238; border-radius: 6px; padding: 1rem 0; position: sticky; top: 1rem; }
+.section-sidebar a { display: block; color: #b0bec5; text-decoration: none; padding: 0.5rem 1rem; font-weight: 600; }
+.section-sidebar a:hover { color: #eceff1; background: rgba(255,255,255,0.05); }
+.section-sidebar a.active { color: #4fc3f7; border-left: 3px solid #4fc3f7; padding-left: calc(1rem - 3px); }
+.section-content { flex: 1; min-width: 0; }
+
 /* Entfernen-Button für dynamisch anlegbare Tabellenzeilen (siehe removeRow() in base.html) */
 .row-remove-btn { background: none; border: 1px solid #c62828; color: #c62828; border-radius: 4px; width: 28px; height: 28px; line-height: 1; cursor: pointer; font-size: 1rem; padding: 0; }
 .row-remove-btn:hover { background: #c62828; color: white; }

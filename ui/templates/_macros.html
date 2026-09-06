@@ -1,3 +1,18 @@
+{% macro section_nav(active) %}
+{#- Linke Seitenleiste für den Vitotronic-Bereich (weitere Bereiche wie MQTT/CAN folgen später,
+   siehe Vorschlag des Nutzers für eine bereichsweise Navigation statt einer flachen Nav-Leiste
+   mit sieben Einzelseiten). `active` ist einer von: variablen, zyklus, konsole, configuration,
+   logging. -#}
+<nav class="section-sidebar">
+  <a href="{{ url_for('vitotronic_variablen_page') }}" {% if active == 'variablen' %}class="active"{% endif %}>Variablen</a>
+  <a href="{{ url_for('variables_page') }}" {% if active == 'zyklus' %}class="active"{% endif %}>Zyklus</a>
+  <a href="{{ url_for('console') }}" {% if active == 'konsole' %}class="active"{% endif %}>Konsole</a>
+  <a href="{{ url_for('config_page') }}" {% if active == 'configuration' %}class="active"{% endif %}>Configuration</a>
+  <a href="{{ url_for('vitotronic_logging_page') }}" {% if active == 'logging' %}class="active"{% endif %}>Logging</a>
+</nav>
+{% endmacro %}
+
+
 {% macro xml_editor(target, content, label, post_action, return_to=None) %}
 <div class="config-file-body">
   <form method="post" enctype="multipart/form-data" action="{{ post_action }}" class="config-import-form">
