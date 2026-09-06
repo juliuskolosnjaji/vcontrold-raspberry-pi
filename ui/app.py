@@ -126,9 +126,7 @@ def logout():
 
 @app.route("/")
 def dashboard():
-    cfg = get_ui_config()
-    mqtt_env = load_env(MQTT_ENV_PATH)
-    return render_template("dashboard.html", cfg=cfg, mqtt_configured=bool(mqtt_env))
+    return render_template("dashboard.html")
 
 
 @app.route("/console", methods=["GET", "POST"])

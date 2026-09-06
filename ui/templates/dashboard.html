@@ -4,20 +4,27 @@
 <h1>vcontrold Dashboard</h1>
 
 <div class="card">
-  <h2>Konfiguration</h2>
-  <table>
-    <tr><th>vclient-Ziel</th><td>{{ cfg.vclient_host }}:{{ cfg.vclient_port }}</td></tr>
-    <tr><th>Geräte-XML (für Konsole)</th><td>{{ cfg.device_xml or "nicht gesetzt (siehe ui.env)" }}</td></tr>
-    <tr><th>vcontrold-Hauptconfig</th><td>{{ cfg.vcontrold_main_xml }}</td></tr>
-    <tr><th>CAN-Interface</th><td>{{ cfg.can_interface }}</td></tr>
-    <tr><th>MQTT-Config</th><td>{{ "vorhanden (config/mqtt.env)" if mqtt_configured else "fehlt — siehe README" }}</td></tr>
-  </table>
+  <h2>Vitotronic</h2>
+  <p><a href="{{ url_for('vitotronic_variablen_page') }}">→ Variablen</a></p>
+  <p><a href="{{ url_for('variables_page') }}">→ Zyklus</a></p>
+  <p><a href="{{ url_for('console') }}">→ Konsole</a></p>
+  <p><a href="{{ url_for('config_page') }}">→ Configuration</a></p>
+  <p><a href="{{ url_for('vitotronic_logging_page') }}">→ Logging</a></p>
 </div>
 
 <div class="card">
-  <h2>Schnellzugriff</h2>
-  <p><a href="{{ url_for('vitotronic_variablen_page') }}">→ Vitotronic (Variablen, Zyklus, Konsole, Configuration, Logging)</a></p>
-  <p><a href="{{ url_for('mqtt_vitotronic_page') }}">→ MQTT (Vitotronic, Home Assistant, Configuration, Logging)</a></p>
-  <p><a href="{{ url_for('can_eingaenge_page') }}">→ CAN (Eingänge, Ausgänge, Configuration, Logging)</a></p>
+  <h2>MQTT</h2>
+  <p><a href="{{ url_for('mqtt_vitotronic_page') }}">→ Vitotronic</a></p>
+  <p><a href="{{ url_for('mqtt_home_assistant_page') }}">→ Home Assistant</a></p>
+  <p><a href="{{ url_for('mqtt_configuration_page') }}">→ Configuration</a></p>
+  <p><a href="{{ url_for('mqtt_logging_page') }}">→ Logging</a></p>
+</div>
+
+<div class="card">
+  <h2>CAN</h2>
+  <p><a href="{{ url_for('can_eingaenge_page') }}">→ Eingänge</a></p>
+  <p><a href="{{ url_for('can_ausgaenge_page') }}">→ Ausgänge</a></p>
+  <p><a href="{{ url_for('can_configuration_page') }}">→ Configuration</a></p>
+  <p><a href="{{ url_for('can_logging_page') }}">→ Logging</a></p>
 </div>
 {% endblock %}

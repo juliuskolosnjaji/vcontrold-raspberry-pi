@@ -1,5 +1,5 @@
 body { font-family: system-ui, sans-serif; margin: 0; background: #f5f5f5; color: #222; }
-nav { background: #263238; padding: 0.75rem 1.5rem; }
+nav { background: #263238; padding: 0.75rem 1.5rem; position: sticky; top: 0; z-index: 30; }
 nav a { color: #eceff1; text-decoration: none; margin-right: 1.5rem; font-weight: 600; }
 nav a:hover { text-decoration: underline; }
 main { padding: 1.5rem; max-width: 900px; margin: 0 auto; }
@@ -57,7 +57,7 @@ main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
 
 /* Bereichs-Seitenleiste (Vitotronic/MQTT/CAN, siehe section_nav()-Makro in _macros.html) */
 .section-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
-.section-sidebar { flex: 0 0 150px; background: #263238; border-radius: 6px; padding: 1rem 0; position: sticky; top: 1rem; }
+.section-sidebar { flex: 0 0 150px; background: #263238; border-radius: 6px; padding: 1rem 0; position: sticky; top: calc(45px + 1rem); }
 .section-sidebar a { display: block; color: #b0bec5; text-decoration: none; padding: 0.5rem 1rem; font-weight: 600; }
 .section-sidebar a:hover { color: #eceff1; background: rgba(255,255,255,0.05); }
 .section-sidebar a.active { color: #4fc3f7; border-left: 3px solid #4fc3f7; padding-left: calc(1rem - 3px); }
@@ -70,7 +70,7 @@ main.login-main { padding: 1.5rem; max-width: 360px; width: 100%; margin: 0; }
 /* Live-Werte (Snapshot per Klick, siehe attachLiveValues() in base.html) */
 .live-badge { display: inline-block; margin-left: 0.4rem; font-size: 0.8rem; font-weight: 600; color: #2e7d32; white-space: nowrap; }
 .live-badge-empty { color: #999; font-weight: 400; }
-.live-refresh-row { margin-bottom: 0.75rem; }
+.live-refresh-row { margin-bottom: 0.75rem; position: sticky; top: 45px; z-index: 20; }
 
 /* Variablen-/CAN-Variablen-Tabellen (MQTT-Variablen-, Vcontrold-/Variablen-Seite) */
 .wide-card { max-width: none; }
