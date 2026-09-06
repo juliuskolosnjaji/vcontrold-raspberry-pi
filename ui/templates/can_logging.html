@@ -15,6 +15,22 @@
     </div>
 
     <div class="card">
+      <h2>Dienst: can-node</h2>
+      <p class="status-{{ can_node_status.state }}">{{ can_node_status.state }}</p>
+      <button type="button" onclick="loadLog('can-node')">Dienst-Log anzeigen</button>
+      <pre id="log-output-can-node" style="display:none;"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Dienst: can1-up</h2>
+      <p class="status-{{ can1_up_status.state }}">{{ can1_up_status.state }}</p>
+      <p style="font-size:0.85rem;color:#666;">Bringt <code>{{ cfg.can_interface }}</code> beim
+         Boot hoch (oneshot -- "inactive" danach ist normal, solange das Interface oben ist).</p>
+      <button type="button" onclick="loadLog('can1-up')">Dienst-Log anzeigen</button>
+      <pre id="log-output-can1-up" style="display:none;"></pre>
+    </div>
+
+    <div class="card">
       <h2>CAN-Sniffer</h2>
       <p>Zeichnet für die angegebene Dauer alle Frames auf <code>{{ cfg.can_interface }}</code>
          auf. Nützlich, um das Protokoll der Technische-Alternative-UVR empirisch zu ermitteln --
@@ -36,7 +52,22 @@
   </div>
 </div>
 
+<style>
+  #log-output-can-node, #log-output-can1-up { max-height: 500px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
+</style>
+
 <script>
+function loadLog(service) {
+  fetch('/diagnostics/log/' + encodeURIComponent(service))
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('log-output-' + service);
+      el.style.display = 'block';
+      el.textContent = data.log || data.error;
+      el.scrollTop = el.scrollHeight;
+    });
+}
+
 function capture() {
   const duration = document.getElementById('duration').value;
   const body = new URLSearchParams({duration});

@@ -10,6 +10,13 @@
   <div class="section-content">
 
     <div class="card">
+      <h2>Dienst: vcontrold</h2>
+      <p class="status-{{ vcontrold_status.state }}">{{ vcontrold_status.state }}</p>
+      <button type="button" onclick="loadServiceLog()">Dienst-Log anzeigen</button>
+      <pre id="service-log-output" style="display:none;"></pre>
+    </div>
+
+    <div class="card">
       <p>Rohes Protokoll-Log aus <code>/tmp/vcontrold.log</code> (letzte 200 Zeilen) -- zeigt die
          tatsächlichen Get/Set-Kommandos und Werte, die vcontrold mit der Vitotronic austauscht
          (<code>-g/--debug</code> in <code>systemd/vcontrold.service</code> aktiviert dieses
@@ -28,10 +35,21 @@
 </div>
 
 <style>
-  #vcontrold-log-output { max-height: 500px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
+  #vcontrold-log-output, #service-log-output { max-height: 500px; overflow-y: auto; background: #1e1e1e; color: #ddd; padding: 0.75rem; border-radius: 4px; }
 </style>
 
 <script>
+function loadServiceLog() {
+  fetch('/diagnostics/log/vcontrold')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('service-log-output');
+      el.style.display = 'block';
+      el.textContent = data.log || data.error;
+      el.scrollTop = el.scrollHeight;
+    });
+}
+
 let vcontroldLogTimer = null;
 
 function loadVcontroldLog() {

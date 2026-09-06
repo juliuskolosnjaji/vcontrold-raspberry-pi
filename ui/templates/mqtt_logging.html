@@ -21,10 +21,13 @@
     </div>
 
     <div class="card">
-      <p>Logs der beiden MQTT-sprechenden Daemons -- vcontrold selbst spricht kein MQTT (dessen
-         Log liegt auf der <a href="{{ url_for('vitotronic_logging_page') }}">Vitotronic-Logging</a>-Seite).</p>
-      <button type="button" onclick="loadLog('orchestrator')">orchestrator-Log anzeigen</button>
-      <button type="button" onclick="loadLog('can-node')">can-node-Log anzeigen</button>
+      <h2>Dienst: orchestrator</h2>
+      <p class="status-{{ orchestrator_status.state }}">{{ orchestrator_status.state }}</p>
+      <p style="font-size:0.85rem;color:#666;">Bridged vcontrold ↔ MQTT. can-node.py (bridged CAN ↔ MQTT)
+         liegt auf der <a href="{{ url_for('can_logging_page') }}">CAN-Logging</a>-Seite, vcontrold
+         selbst spricht kein MQTT und liegt auf der
+         <a href="{{ url_for('vitotronic_logging_page') }}">Vitotronic-Logging</a>-Seite.</p>
+      <button type="button" onclick="loadLog()">Dienst-Log anzeigen</button>
       <pre id="log-output" style="display:none;"></pre>
     </div>
 
@@ -36,8 +39,8 @@
 </style>
 
 <script>
-function loadLog(service) {
-  fetch('/diagnostics/log/' + encodeURIComponent(service))
+function loadLog() {
+  fetch('/diagnostics/log/orchestrator')
     .then(r => r.json())
     .then(data => {
       const el = document.getElementById('log-output');

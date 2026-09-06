@@ -794,9 +794,11 @@ def vitotronic_variablen_page():
 
 @app.route("/vitotronic/logging")
 def vitotronic_logging_page():
-    """Vitotronic-Bereich, Unterseite 'Logging' -- zeigt dasselbe Debug-Log wie zuvor Abschnitt 6
-    der gebündelten Vcontrold-Seite (siehe /vcontrold/log), jetzt als eigenständige Seite."""
-    return render_template("vitotronic_logging.html")
+    """Vitotronic-Bereich, Unterseite 'Logging' -- das rohe Vitotronic-Kommunikations-Log (siehe
+    /vcontrold/log) plus Dienst-Status/Log des vcontrold-Daemons (vorher Teil der eigenständigen
+    Diagnose-Seite, siehe README 'Diagnose aufgelöst in die Bereichs-Logging-Seiten')."""
+    vcontrold_status = diagnostics.service_status("vcontrold")
+    return render_template("vitotronic_logging.html", vcontrold_status=vcontrold_status)
 
 
 @app.route("/mqtt-variables")
@@ -1061,9 +1063,10 @@ def mqtt_configuration_page():
 
 @app.route("/mqtt/logging")
 def mqtt_logging_page():
-    """MQTT-Bereich, Unterseite 'Logging': Verbindungsstatus zum Broker plus die Logs der beiden
-    MQTT-sprechenden Daemons (orchestrator.py, can_node.py) -- vcontrold selbst spricht kein
-    MQTT, dessen Log liegt auf der Vitotronic-Logging-Seite."""
+    """MQTT-Bereich, Unterseite 'Logging': Verbindungsstatus zum Broker plus Dienst-Status/Log von
+    orchestrator.py (bridged vcontrold <-> MQTT) -- can_node.py (bridged CAN <-> MQTT) liegt auf
+    der CAN-Logging-Seite, vcontrold selbst spricht kein MQTT und liegt auf der
+    Vitotronic-Logging-Seite (vorher alle drei zusammen auf der eigenständigen Diagnose-Seite)."""
     mqtt_env = load_env(MQTT_ENV_PATH)
     mqtt_status = None
     if mqtt_env:
@@ -1073,7 +1076,8 @@ def mqtt_logging_page():
             mqtt_env.get("MQTT_USERNAME") or None,
             mqtt_env.get("MQTT_PASSWORD") or None,
         )
-    return render_template("mqtt_logging.html", mqtt_status=mqtt_status)
+    orchestrator_status = diagnostics.service_status("orchestrator")
+    return render_template("mqtt_logging.html", mqtt_status=mqtt_status, orchestrator_status=orchestrator_status)
 
 
 @app.route("/settings")
@@ -1084,28 +1088,9 @@ def settings():
 
 @app.route("/diagnostics")
 def diagnostics_page():
-    cfg = get_ui_config()
-    mqtt_env = load_env(MQTT_ENV_PATH)
-
-    services = [diagnostics.service_status(name) for name in cfg["services"]]
-    can_status = diagnostics.can_link_status(cfg["can_interface"])
-
-    mqtt_status = None
-    if mqtt_env:
-        mqtt_status = diagnostics.mqtt_connectivity(
-            mqtt_env["MQTT_HOST"],
-            int(mqtt_env.get("MQTT_PORT", 1883)),
-            mqtt_env.get("MQTT_USERNAME") or None,
-            mqtt_env.get("MQTT_PASSWORD") or None,
-        )
-
-    return render_template(
-        "diagnostics.html",
-        cfg=cfg,
-        services=services,
-        can_status=can_status,
-        mqtt_status=mqtt_status,
-    )
+    """Aufgelöst in die Logging-Unterseiten der drei Bereiche (vcontrold -> Vitotronic,
+    orchestrator -> MQTT, can-node/can1-up -> CAN) -- Redirect für alte Lesezeichen/Links."""
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/diagnostics/log/<service>")
@@ -1146,12 +1131,21 @@ def can_sniffer_page():
 
 @app.route("/can/logging")
 def can_logging_page():
-    """CAN-Bereich, Unterseite 'Logging': CAN-Interface-Status plus CAN-Sniffer (zeichnet für die
-    angegebene Dauer alle Frames auf, siehe can_sniffer_capture()) -- vorher eigenständige Seite
-    /can-sniffer, jetzt Teil des CAN-Bereichs."""
+    """CAN-Bereich, Unterseite 'Logging': CAN-Interface-Status, Dienst-Status/Log von can-node.py
+    (bridged CAN <-> MQTT) und can1-up.service (bringt can1 beim Boot hoch), plus CAN-Sniffer
+    (zeichnet für die angegebene Dauer alle Frames auf, siehe can_sniffer_capture()) -- vorher
+    eigenständige Seite /can-sniffer bzw. Teil der Diagnose-Seite, jetzt Teil des CAN-Bereichs."""
     cfg = get_ui_config()
     can_status = diagnostics.can_link_status(cfg["can_interface"])
-    return render_template("can_logging.html", cfg=cfg, can_status=can_status)
+    can_node_status = diagnostics.service_status("can-node")
+    can1_up_status = diagnostics.service_status("can1-up")
+    return render_template(
+        "can_logging.html",
+        cfg=cfg,
+        can_status=can_status,
+        can_node_status=can_node_status,
+        can1_up_status=can1_up_status,
+    )
 
 
 @app.route("/can-sniffer/capture", methods=["POST"])
